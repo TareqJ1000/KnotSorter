@@ -9,7 +9,9 @@ import numpy as np
 import scipy as sp
 import pygad
 import yaml 
+import argparse
 from yaml import Loader 
+import pickle as pkl
 
 from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, setKnotType
 
@@ -18,22 +20,41 @@ import matplotlib.pyplot as plt
 from diffractsim import cm, mm, um 
 import os
 
+# Remove if used outside of the cluster 
+
+parser=argparse.ArgumentParser(description='test')
+parser.add_argument('--ii', dest='ii', type=int,
+    default=None, help='')
+args = parser.parse_args()
+shift = args.ii
+
 # This function keeps track of the generation number + best fitness
 
 # Load configuration file
 
-stream = open(f"configs/ga.yaml", 'r')
+stream = open(f"configs/ga{shift}.yaml", 'r')
 cnfg = yaml.load(stream, Loader=Loader)
 
 def on_gen(ga_instance):
     print("Generation : ", ga_instance.generations_completed)
     print("Fitness of the best solution :", ga_instance.best_solution()[1])
+    solution =  ga_instance.best_solution()[0]
+    # Checkpoint current best phase patterns. 
     
-    # Checkpoint current best model?
+    # Save phase patterns of GA instance itself 
+    reshape_phase_1 = np.reshape(a=solution[0:N**2], newshape = (N,N))
+    reshape_phase_2 = np.reshape(a=solution[N**2:2*N**2], newshape=(N,N))
     ga_instance_name = cnfg['ga_instance']
-    ga_instance.save(filename=f'ga_instances/{ga_instance_name}')
     
-    
+    phases = np.empty((2,N,N))
+    phases[0,:,:] = reshape_phase_1
+    phases[1,:,:] = reshape_phase_2
+
+    with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
+        pkl.dump(phases, file)
+        
+    ga_instance.save(filename=f'genetic_instances/{ga_instance_name}')
+
     # Create new directory to save the plots (if it doesn't already exist)
     
     if not os.path.exists(f"plots/{ga_instance_name}"):
@@ -41,8 +62,7 @@ def on_gen(ga_instance):
     
     # Save plot every 100 generations 
     
-    
-    if (ga_instance.generations_completed % 100 == 0):
+    if (ga_instance.generations_completed % 1000 == 0):
         plt.figure()
         plt.plot(ga_instance.best_solutions_fitness)
         plt.savefig(f"plots/{ga_instance_name}/fitness_{ga_instance.generations_completed}.jpg")
@@ -222,6 +242,8 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        on_generation=on_gen)
 
 ga_instance.run()
-ga_instance.plot_fitness()
+
+
+
 
 
