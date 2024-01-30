@@ -109,10 +109,16 @@ parent_selection_type = "rank"
 #K_tournament = 5 # number of contestants, essentially
 #keep_elitism  = 1
 
-crossover_type = "single_point"
+crossover_type = "scattered"
+crossover_probability = cnfg['crossover_prob']
 
 mutation_type = "random"
-mutation_percent_genes = cnfg['mutation_percent'] # probability of mutation 
+mutation_probability = cnfg['mutation_prob'] # probability of mutation 
+mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate 
+random_mutation_min_val = -np.pi
+random_mutation_max_val =  np.pi
+
+gen_saturate = cnfg['gen_saturate']
 
 ga_instance_name = cnfg['ga_instance']
 
@@ -239,7 +245,11 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
                        mutation_percent_genes=mutation_percent_genes,
-                       on_generation=on_gen)
+                       mutation_probability = mutation_probability,
+                       random_mutation_min_val = random_mutation_min_val, 
+                       random_mutation_max_val = random_mutation_max_val, 
+                       on_generation=on_gen, 
+                       stop_criteria=f"saturate_{gen_saturate}")
 
 ga_instance.run()
 
