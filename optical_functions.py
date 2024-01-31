@@ -233,6 +233,32 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
     return AK
 
 
+# This function generates phase gratings in reminisce of OAM gratings 
+
+
+def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
+    
+    crow, ccol = int(rows / 2)+xoffset, int(cols / 2)+yoffset
+    mask = np.zeros((rows,cols)) +0j
+    fx = 10.0
+    fy = 0.0
+    phi = np.zeros((rows,cols))+0j
+
+    for i in range (rows):
+        for j in range (cols):
+            
+            x = i - crow
+            y = j - ccol
+            alpha = l*np.arctan2(x,y) + 2*np.pi*10*y/500
+            g = a[0] + a[1]*np.cos(2*alpha)  + a[2]*np.cos(3*alpha) + a[3]*np.cos(4*alpha)
+                  #g = 1/4*(1 + np.cos(alpha) + np.cos(2*alpha) +  np.cos(3*alpha)+np.cos(4*alpha))
+                  #g = np.mod(alpha,2*np.pi)
+            mask[i,j] = g
+            
+
+    return(mask)
+
+
 
 
 
