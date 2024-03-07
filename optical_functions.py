@@ -207,6 +207,39 @@ def output_chan(X, Y, rad_spot, maxx, num_of_spots):
     
     return fields  # In principle, it suffices to return fields. 
 
+
+
+# Function that outputs channels at more predefined, symmetric points
+
+def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots):
+    N = len(X)
+    spot_loc_x = []
+    spot_loc_y = []
+    
+    for ii in range(int(num_of_spots/2)):
+        
+        # Add a 'positive' and 'negative' spot
+        spot_loc_x.append((ii+1)*0.5*mm)
+        spot_loc_y.append(0)
+        
+        spot_loc_x.append(-(ii+1)*0.5*mm)
+        spot_loc_y.append(0)
+    
+    fields = np.empty((num_of_spots, N, N), dtype=np.complex64)
+    # Space definition 
+    for ii in range(num_of_spots):
+        X=np.linspace(-maxx,maxx,N) + spot_loc_x[ii]
+        Y=np.linspace(-maxx,maxx,N) + spot_loc_y[ii]
+        h=np.abs(X[1]-X[2]) # Step size
+        xx,yy=np.meshgrid(X,Y)
+        r, phi= cart2pol(xx,yy)
+        
+        fields[ii] = pupil_function(r, rad_spot)
+    
+    return fields, spot_loc_x, spot_loc_y # In principle, it suffices to return fields. 
+
+
+
 '''
 Generates knots
 # This function intialises the knot field that we want to generate.

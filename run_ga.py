@@ -29,7 +29,7 @@ args = parser.parse_args()
 shift = args.ii
 
 
-# shift="_sameShape"
+shift="_sameShape"
 
 # This function keeps track of the generation number + best fitness
 
@@ -57,7 +57,7 @@ shapeParams = cnfg['shapeParams']
 num_of_phase_maps = cnfg['num_maps'] # can be 1 or 2!
 
 fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
-
+GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
 
 '''
 GA Parameters
@@ -152,7 +152,11 @@ def on_gen(ga_instance):
     phase_maps = np.empty((num_of_phase_maps, N, N))
     
     for ii in range(num_of_phase_maps):
-        phase_maps[ii] = np.exp(1j*np.reshape(a=solution[(ii)*N**2:(ii+1)*N**2], newshape = (N,N)))
+        # Reshape and apply filter to solutions 
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        # Apply gaussian filter 
+        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        phase_maps[ii] = np.exp(1j*temp)
     
     with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
         pkl.dump(phase_maps, file)
@@ -171,22 +175,21 @@ def on_gen(ga_instance):
         plt.plot(ga_instance.best_solutions_fitness)
         plt.savefig(f"plots/{ga_instance_name}/fitness_{ga_instance.generations_completed}.jpg")
         plt.show()
-
-
 '''
 This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
 '''
 
 def fitness_func(ga_instance, solution, solution_idx):
-    
+
     # Create the phase map(s) by reshaping the solution array
     phase_maps = np.empty((num_of_phase_maps, N, N))
     
     for ii in range(num_of_phase_maps):
-        phase_maps[ii] = np.exp(1j*np.reshape(a=solution[(ii)*N**2:(ii+1)*N**2], newshape = (N,N)))
-    
-
-   
+        # Reshape solution to phase map 
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        # Apply gaussian filter 
+        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        phase_maps[ii] = np.exp(1j*temp)
     
     # Now, this is the fitness parameter 
 
@@ -206,44 +209,29 @@ def fitness_func(ga_instance, solution, solution_idx):
 
         field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
         
-        # Now, what happens next depends on the number of phase patterns
+        # What happens next depends on whether we have one or two phase maps
         
-        if (num_of_phase_maps==1):
+        if(num_of_phase_maps==1):
+            # Compute the field intensity 
             final_field_int = np.abs(field_lens)**2
-        
         else:
             # modulate the field by the second phase map 
-    
             field_mod_2 = field_lens*phase_maps[1]
-    
             # simulate the lens field again. This is the final field. 
-    
             field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
-    
             # compute the field intensity 
-    
             final_field_int = np.abs(field_lens_2)**2
-
         # Define full set of indices, as you would summing through a for loop
-
         full_index = np.arange(len(output_chans))   
-
         # Delete ii from the list of full_index, creating a new temporary array
-
         temp_index = np.delete(full_index, ii)
-
         # Sum up the "incorrect" channels 
-
         incorrect_chans = 0
-
         for ind in temp_index:
             field_in_pupil = final_field_int*output_chans[ind]
             incorrect_chans += np.abs(field_in_pupil)**2
-
         # Now, evaluate the sorting performance 
-
         correct_chans = np.abs(final_field_int*output_chans[ii])**2
-
         sorting_performance += correct_chans - incorrect_chans 
 
     return np.mean(sorting_performance)
