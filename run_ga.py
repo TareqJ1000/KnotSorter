@@ -29,8 +29,6 @@ args = parser.parse_args()
 shift = args.ii
 
 
-shift="_sameShape"
-
 # This function keeps track of the generation number + best fitness
 
 # Load configuration file
@@ -67,7 +65,7 @@ num_generations = int(eval(cnfg['num_of_gens']))
 num_parents_mating = cnfg['parents_mating']
 
 sol_per_pop = cnfg['sol_per_pop'] # number of parents in the population?? 
-num_genes = 2*N**2 # This would refer to the number of parameters in our DNA
+num_genes = num_of_phase_maps*N**2 # This would refer to the number of parameters in our DNA
 
 # Lower and upper-bound ranges of the parameterization. 
 
@@ -183,14 +181,20 @@ def fitness_func(ga_instance, solution, solution_idx):
 
     # Create the phase map(s) by reshaping the solution array
     phase_maps = np.empty((num_of_phase_maps, N, N))
+
     
     for ii in range(num_of_phase_maps):
+<<<<<<< HEAD
         # Reshape solution to phase map 
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = np.exp(1j*temp)
     
+=======
+        phase_maps[ii] = np.exp(1j*np.reshape(a=solution[(ii)*N**2:(ii+1)*N**2], newshape = (N,N)))
+
+>>>>>>> f11b6bd57dfd52b426e92f759c2acb654db8c7f9
     # Now, this is the fitness parameter 
 
     sorting_performance = 0  
@@ -242,26 +246,27 @@ def fitness_func(ga_instance, solution, solution_idx):
 Here, we create an initial population in reminisce of actual OAM holograms
 '''
 
-def initialize_population(sol_per_pop, N):
+def initialize_population(sol_per_pop, N, num_phase_maps):
     # Start with empty array to hold our starting maps
     
-    init_pop = np.empty((sol_per_pop, N**2))
+    init_pop = np.empty((sol_per_pop, num_phase_maps*N**2))
     
     for ii in range(sol_per_pop):
+        for jj in range(num_phase_maps):
         
-        # Stochastic Generator
-        oamMode = np.random.randint(-2,2)
-        a = [np.random.uniform(0.0,1.0) for ii in range(4)]
-        x_offset = np.random.uniform(low=0.0, high=1.0)
-        y_offset = np.random.uniform(low=0.0, high=1.0)
-        
-        # We may apply a random, normally distributed map w/ gaussian mean 
-        
-        gauss_mean = np.random.normal(0,0.1,(N,N))
-        
-        final_field = OAMWithGratings(oamMode,N,N,x_offset, y_offset, a) + gauss_mean
-        
-        init_pop[ii] = final_field.flatten()
+            # Stochastic Generator
+            oamMode = np.random.randint(-2,2)
+            a = [np.random.uniform(0.0,1.0) for ii in range(4)]
+            x_offset = np.random.uniform(low=0.0, high=1.0)
+            y_offset = np.random.uniform(low=0.0, high=1.0)
+            
+            # We may apply a random, normally distributed map w/ gaussian mean 
+            
+            gauss_mean = np.random.normal(0,0.1,(N,N))
+            
+            final_field = OAMWithGratings(oamMode,N,N,x_offset, y_offset, a) + gauss_mean
+            
+            init_pop[ii,(jj)*N**2:(jj+1)*N**2] = final_field.flatten()
     return init_pop
 
 
@@ -286,7 +291,7 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
                        stop_criteria=f"saturate_{gen_saturate}",
-                       initial_population=initialize_population(sol_per_pop,N))
+                       initial_population=initialize_population(sol_per_pop,N,num_of_phase_maps))
 
 ga_instance.run()
 
