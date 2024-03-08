@@ -13,7 +13,7 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, setKnotType, OAMWithGratings
+from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings
 
 import matplotlib.pyplot as plt 
 
@@ -27,7 +27,7 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-
+shift = '_sameType'
 
 # This function keeps track of the generation number + best fitness
 
@@ -121,7 +121,7 @@ Create the OAM beams that we need to sort
 # Now create a list containing 'oamMode' objects 
 
 list_of_OAMs = []
-output_chans = output_chan(X,Y,output_chan_width,maxx,num_of_output_chans)
+output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans)
 
 if(isKnot):
     for ii in range(len(knotType)):
@@ -132,7 +132,6 @@ else:
         list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
 
     
-
 '''
 We run this at the end of every generation. Here, we save the best parameters after every generation
 '''
@@ -184,17 +183,12 @@ def fitness_func(ga_instance, solution, solution_idx):
 
     
     for ii in range(num_of_phase_maps):
-<<<<<<< HEAD
         # Reshape solution to phase map 
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = np.exp(1j*temp)
-    
-=======
-        phase_maps[ii] = np.exp(1j*np.reshape(a=solution[(ii)*N**2:(ii+1)*N**2], newshape = (N,N)))
 
->>>>>>> f11b6bd57dfd52b426e92f759c2acb654db8c7f9
     # Now, this is the fitness parameter 
 
     sorting_performance = 0  
@@ -240,8 +234,6 @@ def fitness_func(ga_instance, solution, solution_idx):
 
     return np.mean(sorting_performance)
 
-
-
 '''
 Here, we create an initial population in reminisce of actual OAM holograms
 '''
@@ -268,8 +260,6 @@ def initialize_population(sol_per_pop, N, num_phase_maps):
             
             init_pop[ii,(jj)*N**2:(jj+1)*N**2] = final_field.flatten()
     return init_pop
-
-
 
 
 # IT BEGINS

@@ -236,7 +236,7 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots):
         
         fields[ii] = pupil_function(r, rad_spot)
     
-    return fields, spot_loc_x, spot_loc_y # In principle, it suffices to return fields. 
+    return fields # In principle, it suffices to return fields. 
 
 
 
