@@ -13,7 +13,7 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings
+from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram 
 
 import matplotlib.pyplot as plt 
 
@@ -27,7 +27,7 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-shift = '_sameType'
+shift = '0'
 
 # This function keeps track of the generation number + best fitness
 
@@ -130,6 +130,9 @@ if(isKnot):
 else:
     for ii in range(len(LG_modes)):
         list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
+        
+    
+print(list_of_OAMs)
 
     
 '''
@@ -198,6 +201,10 @@ def fitness_func(ga_instance, solution, solution_idx):
         # Define initial OAM field and correct output channel 
 
         field = list_of_OAMs[ii].oamBeam 
+        
+        # Do a rough normalization on the incident field 
+        
+        field = field/np.max(np.abs(field))
 
         # modulate the field by the first phase map 
 
@@ -262,6 +269,51 @@ def initialize_population(sol_per_pop, N, num_phase_maps):
     return init_pop
 
 
+def initialize_population_blazed(sol_per_pop, N, sigma, num_phase_maps, isKnot):
+    # Start with empty array to hold our starting maps
+    
+    init_pop = np.empty((sol_per_pop,num_phase_maps*N**2))
+    
+    for ii in range(sol_per_pop):
+        
+        for jj in range(num_phase_maps):
+        
+            # Stochastic Generator
+            # Filp a coin
+            coinfilp = np.random.randint(0,2)
+            
+            if(isKnot == False):
+                oamMode = np.random.randint(-2,3)
+                LA = la*(1/np.random.uniform(0,1))
+                initial_field = LG(r, phi, oamMode, 0, w0, h, 0, k)
+            else:
+                # Filp another coin to determine trefoil or cinquefoil 
+                coinfilp_2 = np.random.randint(0,2)
+                if (coinfilp_2 == 0):
+                    knotType='Trefoil'
+                else:
+                    knotType='Cinquefoil'
+                a = np.random.uniform(0,1)
+                b = np.random.uniform(0,1)
+                s = 1.2
+                shapeParams = [a,b,s]
+                initial_field = setKnotType(r, phi, w0, knotType, shapeParams) 
+
+            initial_field = initial_field/np.max(np.abs(initial_field))
+            LA = la*(1/np.random.uniform(0,1))
+
+            # We may apply a random, normally distributed map w/ gaussian mean 
+            gauss_mean = np.random.normal(0,0.1,(N,N))
+            final_field = Hologram(initial_field, h,h,LA) + gauss_mean
+
+            # Apply a gaussian filter, too
+            final_field = sp.ndimage.gaussian_filter(final_field, sigma=sigma)
+            final_field =  np.pi*(final_field/np.max(np.abs(final_field)))
+            init_pop[ii, (jj)*N**2:(jj+1)*N**2] = final_field.flatten()
+        
+    return init_pop
+
+
 # IT BEGINS
 
 fitness_function = fitness_func 
@@ -281,7 +333,7 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
                        stop_criteria=f"saturate_{gen_saturate}",
-                       initial_population=initialize_population(sol_per_pop,N,num_of_phase_maps))
+                       initial_population=initialize_population_blazed(sol_per_pop,N,GFilterStrength,num_of_phase_maps, isKnot=isKnot))
 
 ga_instance.run()
 

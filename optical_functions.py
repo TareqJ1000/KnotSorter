@@ -5,17 +5,11 @@ import scipy
 import scipy.special
 from scipy.fft import fft2, fftfreq, ifft2, fftshift, ifftshift
 import matplotlib.pyplot as plt
-from IPython.display import display
-import threading
-from io import StringIO 
-import sys
-import ipywidgets as widgets
+
+
 import math
 import os
 
-
-import plotly
-import plotly.graph_objs as go
 
 import diffractsim
 diffractsim.set_backend("CPU")
@@ -290,6 +284,35 @@ def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
             
 
     return(mask)
+
+
+# Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
+
+def Hologram(A,hx,hy,LA): 
+  # A -> Complex amplitude of the beam 
+  # hx, hy -> x,y step-size
+  # LA -> grating periodicity. This is usually expressed in terms of wavelength units
+  # Normalization of the input beam
+    
+    nn=np.sum(np.abs(A)**2)*hx*hy
+    NU=A/np.sqrt(nn)
+      # Amplitude and phase pattern 
+    Amp=np.abs(NU)
+    PHI=np.angle(NU)
+      # Grating
+    mm=Amp.shape
+    x1,y1=np.meshgrid(hx*np.arange(1,mm[1]+1),hy*np.arange(1,mm[0]+1))
+      # Inverse Sinc fucntion
+    ss=np.linspace(-np.pi,0,2000)
+    sincc=np.sin(ss)/ss
+    sincc[np.isnan(sincc)]=1
+      # Amplitude masking 
+    M=1+np.interp(Amp,sincc,ss)/np.pi
+    M[np.isnan(M)]=0
+      # Phase Hologram
+    F=np.mod(PHI-np.pi*M+(2*np.pi*(x1+y1))/LA,2*np.pi)
+      # Full Hologram
+    return M*F
 
 
 
