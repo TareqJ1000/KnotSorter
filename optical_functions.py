@@ -210,15 +210,19 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots):
     spot_loc_x = []
     spot_loc_y = []
     
-    for ii in range(int(num_of_spots/2)):
+    for ii in range(int(num_of_spots/2)+1):
         
-        # Add a 'positive' and 'negative' spot
-        spot_loc_x.append((ii+1)*0.5*mm)
-        spot_loc_y.append(0)
+        if (ii==0):
+            spot_loc_x.append(0)
+            spot_loc_y.append(0)
+        else:
+            # Add a 'positive' and 'negative' spot
+            spot_loc_x.append((ii)*1.0*mm)
+            spot_loc_y.append(0)
+            
+            spot_loc_x.append(-(ii)*1.0*mm)
+            spot_loc_y.append(0)
         
-        spot_loc_x.append(-(ii+1)*0.5*mm)
-        spot_loc_y.append(0)
-    
     fields = np.empty((num_of_spots, N, N), dtype=np.complex64)
     # Space definition 
     for ii in range(num_of_spots):
@@ -231,7 +235,6 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots):
         fields[ii] = pupil_function(r, rad_spot)
     
     return fields # In principle, it suffices to return fields. 
-
 
 
 '''
@@ -313,6 +316,18 @@ def Hologram(A,hx,hy,LA):
     F=np.mod(PHI-np.pi*M+(2*np.pi*(x1+y1))/LA,2*np.pi)
       # Full Hologram
     return M*F
+
+
+# Just a simple function that wraps a field from [0,2pi] to [-pi, +pi]
+
+def wrap_to_domain(field):
+    N = len(field)
+    for ii in range(N):
+        for jj in range(N):
+            if(field[ii,jj] > np.pi):
+                field[ii,jj] -= 2*np.pi
+                
+    return field
 
 
 

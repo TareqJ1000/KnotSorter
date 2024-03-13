@@ -13,7 +13,7 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram 
+from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain 
 
 import matplotlib.pyplot as plt 
 
@@ -72,9 +72,12 @@ num_genes = num_of_phase_maps*N**2 # This would refer to the number of parameter
 init_range_low = -np.pi
 init_range_high = np.pi
 
-parent_selection_type = "rank"
+#parent_selection_type = "rank"
 #K_tournament = 5 # number of contestants, essentially
 #keep_elitism  = 1
+
+parent_c = cnfg['parent_c'] # the scaling parameter for exponential decay
+parent_k = cnfg['parent_k'] # controls the peak of the probability distribution
 
 crossover_type = "single_point"
 crossover_probability = cnfg['crossover_prob'] # We keep the solution untouched to the next gen if RNG is <= this number
@@ -96,10 +99,10 @@ Define the initial field
 
 # Define the coordinate space 
 
-la = 0.5*um
+la = 0.78*um
 k=(2*np.pi)/la  # [m^-1] wavenumber    
-maxx = 1.5 * mm # Full length of the numerical window (m)
 N=128 # [Number of points per dimension]
+maxx = 20*um*N # Full length of the numerical window in terms of the usual length of SLM macropixels (m)
 
 # Space definition 
 dx = maxx/N
@@ -156,6 +159,7 @@ def on_gen(ga_instance):
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        
         phase_maps[ii] = np.exp(1j*temp)
     
     with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
@@ -184,7 +188,6 @@ def fitness_func(ga_instance, solution, solution_idx):
     # Create the phase map(s) by reshaping the solution array
     phase_maps = np.empty((num_of_phase_maps, N, N))
 
-    
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
@@ -260,7 +263,6 @@ def initialize_population(sol_per_pop, N, num_phase_maps):
             y_offset = np.random.uniform(low=0.0, high=1.0)
             
             # We may apply a random, normally distributed map w/ gaussian mean 
-            
             gauss_mean = np.random.normal(0,0.1,(N,N))
             
             final_field = OAMWithGratings(oamMode,N,N,x_offset, y_offset, a) + gauss_mean
@@ -272,10 +274,9 @@ def initialize_population(sol_per_pop, N, num_phase_maps):
 def initialize_population_blazed(sol_per_pop, N, sigma, num_phase_maps, isKnot):
     # Start with empty array to hold our starting maps
     
-    init_pop = np.empty((sol_per_pop,num_phase_maps*N**2))
+    init_pop = np.empty((sol_per_pop,num_phase_maps, N, N))
     
     for ii in range(sol_per_pop):
-        
         for jj in range(num_phase_maps):
         
             # Stochastic Generator
@@ -296,23 +297,64 @@ def initialize_population_blazed(sol_per_pop, N, sigma, num_phase_maps, isKnot):
                 a = np.random.uniform(0,1)
                 b = np.random.uniform(0,1)
                 s = 1.2
-                shapeParams = [a,b,s]
                 initial_field = setKnotType(r, phi, w0, knotType, shapeParams) 
 
             initial_field = initial_field/np.max(np.abs(initial_field))
             LA = la*(1/np.random.uniform(0,1))
+    
+            # Stepsize in the x and y directions are randomized. This also applies stochasticsity on the generated maps
+        
+            hx = np.random.uniform(1e-3*h, h)
+            hy = np.random.uniform(1e-3*h, h)
 
             # We may apply a random, normally distributed map w/ gaussian mean 
             gauss_mean = np.random.normal(0,0.1,(N,N))
-            final_field = Hologram(initial_field, h,h,LA) + gauss_mean
-
+            final_field = wrap_to_domain(Hologram(initial_field, hx, hy, LA))
+            
+            final_field += gauss_mean
+            
             # Apply a gaussian filter, too
             final_field = sp.ndimage.gaussian_filter(final_field, sigma=sigma)
-            final_field =  np.pi*(final_field/np.max(np.abs(final_field)))
-            init_pop[ii, (jj)*N**2:(jj+1)*N**2] = final_field.flatten()
+            final_field =  np.pi*(np.tanh(final_field))
+            init_pop[ii,jj] = final_field
         
     return init_pop
 
+
+# c and k are empirical scaling factors that control the probability distribution. 
+# c determines how well favoured fit individuals are
+# k determines how peaked is the p-dist. 
+
+
+def exp_rank_selection(fitness, num_parents, ga_instance):
+    
+    fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
+    fitness_sorted.reverse()
+
+    parents_sorted = np.empty((num_parents, ga_instance.population.shape[1]))
+
+    # Create ranks 
+    ranks = np.arange(1, ga_instance.sol_per_pop+1)
+
+    # Now, compute the probabilities according to exponential selection routine
+    probs = parent_c*(1 - np.exp(-ranks/parent_k))
+    
+    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(probs=probs.copy(), 
+                                                              num_parents=num_parents)
+    parents_indices = []
+
+    for parent_num in range(num_parents):
+        rand_prob = np.random.rand()
+        for idx in range(probs.shape[0]):
+            if (rand_prob >= probs_start[idx] and rand_prob < probs_end[idx]):
+            # The variable idx has the rank of solution but not its index in the population.
+            # Return the correct index of the solution.
+                mapped_idx = fitness_sorted[idx]
+                parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
+                parents_indices.append(mapped_idx)
+                break
+                
+    return parents, np.array(parents_indices)
 
 # IT BEGINS
 
@@ -324,7 +366,7 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        num_genes=num_genes,
                        init_range_low=init_range_low,
                        init_range_high=init_range_high,
-                       parent_selection_type=parent_selection_type,
+                       parent_selection_type=exp_rank_selection,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
                        mutation_percent_genes=mutation_percent_genes,
@@ -332,8 +374,7 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
-                       stop_criteria=f"saturate_{gen_saturate}",
-                       initial_population=initialize_population_blazed(sol_per_pop,N,GFilterStrength,num_of_phase_maps, isKnot=isKnot))
+                       stop_criteria=f"saturate_{gen_saturate}")
 
 ga_instance.run()
 
