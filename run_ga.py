@@ -28,7 +28,6 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-shift = '0'
 
 # This function keeps track of the generation number + best fitness
 
@@ -44,6 +43,7 @@ Global/Optimization Parameters
 N = cnfg['dim']
 num_of_output_chans = cnfg['num_output_chans']
 output_chan_width = cnfg['output_chan_width'] * mm # in mm 
+channel_sep = cnfg['channel_sep'] 
 
 # Some parameters specifying the LG modes
 
@@ -74,10 +74,6 @@ num_genes = num_of_phase_maps*N**2 # This would refer to the number of parameter
 init_range_low = -np.pi
 init_range_high = np.pi
 
-#parent_selection_type = "rank"
-#K_tournament = 5 # number of contestants, essentially
-#keep_elitism  = 1
-
 parent_c = cnfg['parent_c'] # the scaling parameter for exponential decay
 parent_k = cnfg['parent_k'] # controls the peak of the probability distribution
 
@@ -91,14 +87,11 @@ random_mutation_min_val = -np.pi
 random_mutation_max_val =  np.pi
 
 gen_saturate = cnfg['gen_saturate']
-
 ga_instance_name = cnfg['ga_instance']
-
 
 '''
 Define the initial field 
 '''
-
 # Define the coordinate space 
 
 la = 0.78*um
@@ -126,7 +119,7 @@ Create the OAM beams that we need to sort
 # Now create a list containing 'oamMode' objects 
 
 list_of_OAMs = []
-output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans)
+output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans, chan_sep=channel_sep)
 
 if(isKnot):
     for ii in range(len(knotType)):
@@ -161,8 +154,9 @@ def on_gen(ga_instance):
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        
-        phase_maps[ii] = np.exp(1j*temp)
+        phase_maps[ii] = temp
+        print(np.min(phase_maps[ii]))
+        print(np.max(phase_maps[ii]))
     
     with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
         pkl.dump(phase_maps, file)
@@ -220,12 +214,13 @@ def fitness_func(ga_instance, solution, solution_idx):
             field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
         else: # Take the fourier transform 
             field_lens = fftshift(fft2(field_mod_1))
+            field_lens = field_lens/np.max(np.abs(field_lens))
         
         # What happens next depends on whether we have one or two phase maps
         
         if(num_of_phase_maps==1):
             # Compute the field intensity 
-            final_field_int = np.abs(field_lens)**2
+            final_field = field_lens
         else:
             # Normalize the field at the focal plane
             field_lens = field_lens/np.max(np.abs(field_lens))
@@ -237,7 +232,11 @@ def fitness_func(ga_instance, solution, solution_idx):
             else: 
                 field_lens_2 = ifft2(ifftshift(field_mod_2))
             # compute the field intensity 
-            final_field_int = np.abs(field_lens_2)**2
+            field_lens_2 = field_lens_2/np.max(np.abs(field_lens_2))
+            
+            final_field = np.abs(field_lens_2)
+            #final_field_int = np.abs(field_lens_2)**2
+            
         # Define full set of indices, as you would summing through a for loop
         full_index = np.arange(len(output_chans))   
         # Delete ii from the list of full_index, creating a new temporary array
@@ -245,12 +244,12 @@ def fitness_func(ga_instance, solution, solution_idx):
         # Sum up the "incorrect" channels 
         incorrect_chans = 0
         for ind in temp_index:
-            field_in_pupil = final_field_int*output_chans[ind]
+            field_in_pupil = final_field*output_chans[ind]
             incorrect_chans += np.abs(field_in_pupil)**2
         # Now, evaluate the sorting performance 
-        correct_chans = np.abs(final_field_int*output_chans[ii])**2
-        sorting_performance += correct_chans - incorrect_chans 
-
+        correct_chans = np.abs(final_field*output_chans[ii])**2
+        sorting_performance += (correct_chans - incorrect_chans)
+        
     return np.mean(sorting_performance)
 
 '''
@@ -382,7 +381,8 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
-                       stop_criteria=f"saturate_{gen_saturate}")
+                       stop_criteria=f"saturate_{gen_saturate}", 
+                       gene_space={'low': -np.pi, 'high':np.pi})
 
 ga_instance.run()
 
