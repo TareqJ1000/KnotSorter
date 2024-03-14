@@ -14,6 +14,7 @@ from yaml import Loader
 import pickle as pkl
 
 from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain 
+from scipy.fft import ifft2, ifftshift, fft2, fftshift
 
 import matplotlib.pyplot as plt 
 
@@ -54,6 +55,7 @@ knotType = cnfg['knotType']
 shapeParams = cnfg['shapeParams']
 num_of_phase_maps = cnfg['num_maps'] # can be 1 or 2!
 
+simulateLens = cnfg['simulateLens'] # Do we simulate the phase effects of our lenses, or do we neglect them and take the fourier and inverse fourier transform? 
 fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
 GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
 
@@ -214,8 +216,10 @@ def fitness_func(ga_instance, solution, solution_idx):
         field_mod_1 = field*phase_maps[0]
 
         # let's simulate the propagation of the lens
-
-        field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
+        if (simulateLens):
+            field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
+        else: # Take the fourier transform 
+            field_lens = fftshift(fft2(field_mod_1))
         
         # What happens next depends on whether we have one or two phase maps
         
@@ -223,10 +227,15 @@ def fitness_func(ga_instance, solution, solution_idx):
             # Compute the field intensity 
             final_field_int = np.abs(field_lens)**2
         else:
+            # Normalize the field at the focal plane
+            field_lens = field_lens/np.max(np.abs(field_lens))
             # modulate the field by the second phase map 
             field_mod_2 = field_lens*phase_maps[1]
             # simulate the lens field again. This is the final field. 
-            field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
+            if (simulateLens):
+                field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
+            else: 
+                field_lens_2 = ifft2(ifftshift(field_mod_2))
             # compute the field intensity 
             final_field_int = np.abs(field_lens_2)**2
         # Define full set of indices, as you would summing through a for loop
@@ -319,7 +328,6 @@ def initialize_population_blazed(sol_per_pop, N, sigma, num_phase_maps, isKnot):
             init_pop[ii,jj] = final_field
         
     return init_pop
-
 
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are

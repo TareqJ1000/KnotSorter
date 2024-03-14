@@ -6,7 +6,6 @@ import scipy.special
 from scipy.fft import fft2, fftfreq, ifft2, fftshift, ifftshift
 import matplotlib.pyplot as plt
 
-
 import math
 import os
 
@@ -205,22 +204,19 @@ def output_chan(X, Y, rad_spot, maxx, num_of_spots):
 
 # Function that outputs channels at more predefined, symmetric points
 
-def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots):
+def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
     N = len(X)
     spot_loc_x = []
     spot_loc_y = []
+
     
-    for ii in range(int(num_of_spots/2)+1):
+    for ii in range(int(num_of_spots/2)):
         
-        if (ii==0):
-            spot_loc_x.append(0)
-            spot_loc_y.append(0)
-        else:
             # Add a 'positive' and 'negative' spot
-            spot_loc_x.append((ii)*1.0*mm)
+            spot_loc_x.append((ii+1)*chan_sep*mm)
             spot_loc_y.append(0)
             
-            spot_loc_x.append(-(ii)*1.0*mm)
+            spot_loc_x.append(-(ii+1)*chan_sep*mm)
             spot_loc_y.append(0)
         
     fields = np.empty((num_of_spots, N, N), dtype=np.complex64)
