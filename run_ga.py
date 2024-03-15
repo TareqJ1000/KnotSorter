@@ -28,6 +28,7 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
+shift=0
 
 # This function keeps track of the generation number + best fitness
 
