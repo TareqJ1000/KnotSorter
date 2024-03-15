@@ -219,7 +219,7 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
             spot_loc_x.append(-(ii+1)*chan_sep*mm)
             spot_loc_y.append(0)
         
-    fields = np.empty((num_of_spots, N, N), dtype=np.complex64)
+    fields = np.empty((num_of_spots, N, N))
     # Space definition 
     for ii in range(num_of_spots):
         X=np.linspace(-maxx,maxx,N) + spot_loc_x[ii]

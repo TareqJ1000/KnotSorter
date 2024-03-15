@@ -28,7 +28,7 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-shift=0
+shift= 0
 
 # This function keeps track of the generation number + best fitness
 
@@ -215,7 +215,6 @@ def fitness_func(ga_instance, solution, solution_idx):
             field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
         else: # Take the fourier transform 
             field_lens = fftshift(fft2(field_mod_1))
-            field_lens = field_lens/np.max(np.abs(field_lens))
         
         # What happens next depends on whether we have one or two phase maps
         
@@ -223,8 +222,6 @@ def fitness_func(ga_instance, solution, solution_idx):
             # Compute the field intensity 
             final_field = field_lens
         else:
-            # Normalize the field at the focal plane
-            field_lens = field_lens/np.max(np.abs(field_lens))
             # modulate the field by the second phase map 
             field_mod_2 = field_lens*phase_maps[1]
             # simulate the lens field again. This is the final field. 
@@ -235,7 +232,7 @@ def fitness_func(ga_instance, solution, solution_idx):
             # compute the field intensity 
             field_lens_2 = field_lens_2/np.max(np.abs(field_lens_2))
             
-            final_field = np.abs(field_lens_2)
+            final_field = field_lens_2
             #final_field_int = np.abs(field_lens_2)**2
             
         # Define full set of indices, as you would summing through a for loop
@@ -245,11 +242,11 @@ def fitness_func(ga_instance, solution, solution_idx):
         # Sum up the "incorrect" channels 
         incorrect_chans = 0
         for ind in temp_index:
-            field_in_pupil = final_field*output_chans[ind]
-            incorrect_chans += np.abs(field_in_pupil)**2
+            field_in_pupil = (np.abs(final_field)**2)*output_chans[ind]
+            incorrect_chans += field_in_pupil
         # Now, evaluate the sorting performance 
-        correct_chans = np.abs(final_field*output_chans[ii])**2
-        sorting_performance += (correct_chans - incorrect_chans)
+        correct_chans = (np.abs(final_field)**2)*output_chans[ii]
+        sorting_performance += correct_chans - incorrect_chans
         
     return np.mean(sorting_performance)
 
@@ -382,8 +379,7 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
-                       stop_criteria=f"saturate_{gen_saturate}", 
-                       gene_space={'low': -np.pi, 'high':np.pi})
+                       stop_criteria=f"saturate_{gen_saturate}")
 
 ga_instance.run()
 

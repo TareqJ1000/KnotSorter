@@ -3,7 +3,7 @@ dim: 128
 num_output_chans: 2
 output_chan_width: 0.23 # in mm 
 LG_modes: [[1,0], [2,0]]
-w0: 0.25 # in mm
+w0: 0.20 # in mm
 fourier_length: 10 # in cm 
 num_maps: 2
 gauss_filter_sigma: 500
