@@ -28,7 +28,8 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-shift= 0
+shift = 1
+
 
 # This function keeps track of the generation number + best fitness
 
@@ -113,7 +114,6 @@ Y = dy*(np.arange(N) - N //2)
 xx,yy=np.meshgrid(X,Y);
 r, phi= cart2pol(xx,yy)
 
-
 ''' 
 Create the OAM beams that we need to sort 
 '''
@@ -132,6 +132,7 @@ else:
         
     
 print(list_of_OAMs)
+
 
     
 '''
@@ -156,8 +157,7 @@ def on_gen(ga_instance):
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = temp
-        print(np.min(phase_maps[ii]))
-        print(np.max(phase_maps[ii]))
+
     
     with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
         pkl.dump(phase_maps, file)
@@ -183,7 +183,7 @@ This computes the fitness function that we use to improve the GA. We can adapt t
 def fitness_func(ga_instance, solution, solution_idx):
 
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N))
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
@@ -230,11 +230,15 @@ def fitness_func(ga_instance, solution, solution_idx):
             else: 
                 field_lens_2 = ifft2(ifftshift(field_mod_2))
             # compute the field intensity 
-            field_lens_2 = field_lens_2/np.max(np.abs(field_lens_2))
+            # field_lens_2 = field_lens_2/np.max(np.abs(field_lens_2))
             
             final_field = field_lens_2
             #final_field_int = np.abs(field_lens_2)**2
-            
+        
+        # We normalize the final field and compute the intensity 
+        final_field = final_field/np.max(np.abs(final_field))
+        final_field_int = np.abs(final_field)**2
+        
         # Define full set of indices, as you would summing through a for loop
         full_index = np.arange(len(output_chans))   
         # Delete ii from the list of full_index, creating a new temporary array
@@ -242,13 +246,13 @@ def fitness_func(ga_instance, solution, solution_idx):
         # Sum up the "incorrect" channels 
         incorrect_chans = 0
         for ind in temp_index:
-            field_in_pupil = (np.abs(final_field)**2)*output_chans[ind]
-            incorrect_chans += field_in_pupil
+            field_in_pupil = final_field_int*output_chans[ind]
+            incorrect_chans += np.sum(field_in_pupil)
         # Now, evaluate the sorting performance 
-        correct_chans = (np.abs(final_field)**2)*output_chans[ii]
+        correct_chans = np.sum(final_field_int*output_chans[ii])
         sorting_performance += correct_chans - incorrect_chans
-        
-    return np.mean(sorting_performance)
+     
+    return sorting_performance
 
 '''
 Here, we create an initial population in reminisce of actual OAM holograms

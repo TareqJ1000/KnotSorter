@@ -6,7 +6,7 @@ LG_modes: [[0,0], [2,0]]
 w0: 0.07 # in mm
 fourier_length: 10 # in cm 
 num_maps: 1
-gauss_filter_sigma: 400
+gauss_filter_sigma: 0
 channel_sep: 1.5
 simulateLens: False
 
@@ -23,7 +23,7 @@ parent_k: 1.0
 ga_instance: "knots_fourierTrans"
 
 # Do we generate knots instead? 
-isKnot: False
+isKnot: True
 knotType: ['Trefoil', 'Cinquefoil']
 shapeParams: [[1,1,1.2],[2.5,2.5,1.2]]
 
