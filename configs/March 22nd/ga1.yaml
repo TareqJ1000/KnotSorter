@@ -6,7 +6,7 @@ LG_modes: [[1,0], [-1,0]]
 w0: 0.15 # in mm
 fourier_length: 10 # in cm 
 num_maps: 1
-gauss_filter_sigma: 300
+gauss_filter_sigma: 1000
 channel_sep: 1.5
 simulateLens: False
 

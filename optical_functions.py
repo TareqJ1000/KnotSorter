@@ -285,6 +285,13 @@ def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
     return(mask)
 
 
+# This is a simple routine that applies normalization to the field, given also the numerical step size. 
+
+def norm_field(field,h):
+    norm_fac=np.sqrt(np.sum(np.abs(field*h)**2))
+    return field/norm_fac 
+
+
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 
 def Hologram(A,hx,hy,LA): 

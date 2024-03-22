@@ -13,7 +13,7 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain 
+from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain, norm_field 
 from scipy.fft import ifft2, ifftshift, fft2, fftshift
 
 import matplotlib.pyplot as plt 
@@ -28,7 +28,7 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-shift = 1
+shift = 0
 
 
 # This function keeps track of the generation number + best fitness
@@ -59,7 +59,7 @@ num_of_phase_maps = cnfg['num_maps'] # can be 1 or 2!
 
 simulateLens = cnfg['simulateLens'] # Do we simulate the phase effects of our lenses, or do we neglect them and take the fourier and inverse fourier transform? 
 fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
-GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
+GFilterStrength = cnfg['gauss_filter_sigma']/2 # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
 
 '''
 GA Parameters
@@ -89,7 +89,7 @@ random_mutation_min_val = -np.pi
 random_mutation_max_val =  np.pi
 
 gen_saturate = cnfg['gen_saturate']
-ga_instance_name = cnfg['ga_instance']
+cnfg['ga_instance'] = f"{cnfg['ga_instance']}_{shift}"
 
 '''
 Define the initial field 
@@ -202,9 +202,9 @@ def fitness_func(ga_instance, solution, solution_idx):
 
         field = list_of_OAMs[ii].oamBeam 
         
-        # Do a rough normalization on the incident field 
+        # Do a proper normalization on the incident field 
         
-        field = field/np.max(np.abs(field))
+        field = norm_field(field,h)
 
         # modulate the field by the first phase map 
 
@@ -236,7 +236,7 @@ def fitness_func(ga_instance, solution, solution_idx):
             #final_field_int = np.abs(field_lens_2)**2
         
         # We normalize the final field and compute the intensity 
-        final_field = final_field/np.max(np.abs(final_field))
+        final_field = norm_field(final_field,h)
         final_field_int = np.abs(final_field)**2
         
         # Define full set of indices, as you would summing through a for loop
