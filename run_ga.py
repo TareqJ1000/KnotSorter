@@ -28,8 +28,6 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
-shift = 0
-
 
 # This function keeps track of the generation number + best fitness
 
@@ -59,7 +57,7 @@ num_of_phase_maps = cnfg['num_maps'] # can be 1 or 2!
 
 simulateLens = cnfg['simulateLens'] # Do we simulate the phase effects of our lenses, or do we neglect them and take the fourier and inverse fourier transform? 
 fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
-GFilterStrength = cnfg['gauss_filter_sigma']/2 # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
+GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
 
 '''
 GA Parameters
@@ -82,14 +80,13 @@ parent_k = cnfg['parent_k'] # controls the peak of the probability distribution
 crossover_type = "single_point"
 crossover_probability = cnfg['crossover_prob'] # We keep the solution untouched to the next gen if RNG is <= this number
 
-mutation_type = "random"
-mutation_probability = cnfg['mutation_prob'] # probability of mutation 
+mutation_type = cnfg['mutation_type']
+mutation_probability = eval(cnfg['mutation_prob']) # probability of mutation (must be a tuple in (low quality, high quality))
 mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate 
 random_mutation_min_val = -np.pi
 random_mutation_max_val =  np.pi
 
 gen_saturate = cnfg['gen_saturate']
-cnfg['ga_instance'] = f"{cnfg['ga_instance']}_{shift}"
 
 '''
 Define the initial field 
@@ -129,12 +126,7 @@ if(isKnot):
 else:
     for ii in range(len(LG_modes)):
         list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
-        
-    
-print(list_of_OAMs)
-
-
-    
+       
 '''
 We run this at the end of every generation. Here, we save the best parameters after every generation
 '''
@@ -254,9 +246,72 @@ def fitness_func(ga_instance, solution, solution_idx):
      
     return sorting_performance
 
+
+# c and k are empirical scaling factors that control the probability distribution. 
+# c determines how well favoured fit individuals are
+# k determines how peaked is the p-dist. 
+
+
+def exp_rank_selection(fitness, num_parents, ga_instance):
+    
+    fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
+    fitness_sorted.reverse()
+
+    parents_sorted = np.empty((num_parents, ga_instance.population.shape[1]))
+
+    # Create ranks 
+    ranks = np.arange(1, ga_instance.sol_per_pop+1)
+
+    # Now, compute the probabilities according to exponential selection routine
+    probs = parent_c*(1 - np.exp(-ranks/parent_k))
+    
+    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(probs=probs.copy(), 
+                                                              num_parents=num_parents)
+    parents_indices = []
+
+    for parent_num in range(num_parents):
+        rand_prob = np.random.rand()
+        for idx in range(probs.shape[0]):
+            if (rand_prob >= probs_start[idx] and rand_prob < probs_end[idx]):
+            # The variable idx has the rank of solution but not its index in the population.
+            # Return the correct index of the solution.
+                mapped_idx = fitness_sorted[idx]
+                parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
+                parents_indices.append(mapped_idx)
+                break
+                
+    return parents, np.array(parents_indices)
+
+# IT BEGINS
+
+fitness_function = fitness_func 
+ga_instance = pygad.GA(num_generations=num_generations,
+                       num_parents_mating=num_parents_mating,
+                       fitness_func=fitness_function,
+                       sol_per_pop=sol_per_pop,
+                       num_genes=num_genes,
+                       init_range_low=init_range_low,
+                       init_range_high=init_range_high,
+                       parent_selection_type=exp_rank_selection,
+                       crossover_type=crossover_type,
+                       mutation_type=mutation_type,
+                       mutation_percent_genes=mutation_percent_genes,
+                       mutation_probability = mutation_probability,
+                       random_mutation_min_val = random_mutation_min_val, 
+                       random_mutation_max_val = random_mutation_max_val, 
+                       on_generation=on_gen, 
+                       stop_criteria=f"saturate_{gen_saturate}")
+
+ga_instance.run()
+
+
+
+
 '''
+
+DEPRECIATED FUNCTUIONS
+
 Here, we create an initial population in reminisce of actual OAM holograms
-'''
 
 def initialize_population(sol_per_pop, N, num_phase_maps):
     # Start with empty array to hold our starting maps
@@ -330,64 +385,7 @@ def initialize_population_blazed(sol_per_pop, N, sigma, num_phase_maps, isKnot):
         
     return init_pop
 
-# c and k are empirical scaling factors that control the probability distribution. 
-# c determines how well favoured fit individuals are
-# k determines how peaked is the p-dist. 
-
-
-def exp_rank_selection(fitness, num_parents, ga_instance):
-    
-    fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
-    fitness_sorted.reverse()
-
-    parents_sorted = np.empty((num_parents, ga_instance.population.shape[1]))
-
-    # Create ranks 
-    ranks = np.arange(1, ga_instance.sol_per_pop+1)
-
-    # Now, compute the probabilities according to exponential selection routine
-    probs = parent_c*(1 - np.exp(-ranks/parent_k))
-    
-    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(probs=probs.copy(), 
-                                                              num_parents=num_parents)
-    parents_indices = []
-
-    for parent_num in range(num_parents):
-        rand_prob = np.random.rand()
-        for idx in range(probs.shape[0]):
-            if (rand_prob >= probs_start[idx] and rand_prob < probs_end[idx]):
-            # The variable idx has the rank of solution but not its index in the population.
-            # Return the correct index of the solution.
-                mapped_idx = fitness_sorted[idx]
-                parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
-                parents_indices.append(mapped_idx)
-                break
-                
-    return parents, np.array(parents_indices)
-
-# IT BEGINS
-
-fitness_function = fitness_func 
-ga_instance = pygad.GA(num_generations=num_generations,
-                       num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_function,
-                       sol_per_pop=sol_per_pop,
-                       num_genes=num_genes,
-                       init_range_low=init_range_low,
-                       init_range_high=init_range_high,
-                       parent_selection_type=exp_rank_selection,
-                       crossover_type=crossover_type,
-                       mutation_type=mutation_type,
-                       mutation_percent_genes=mutation_percent_genes,
-                       mutation_probability = mutation_probability,
-                       random_mutation_min_val = random_mutation_min_val, 
-                       random_mutation_max_val = random_mutation_max_val, 
-                       on_generation=on_gen, 
-                       stop_criteria=f"saturate_{gen_saturate}")
-
-ga_instance.run()
-
-
+'''
 
 
 
