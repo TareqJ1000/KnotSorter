@@ -292,6 +292,12 @@ def norm_field(field,h):
     return field/norm_fac 
 
 
+# This function computes the shannon entropy in d-dimensions 
+
+def shannon_entropy(x,d):
+    return (-x*np.log2(x/(d-1)) - (1-x)*np.log2(1-x))
+
+
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 
 def Hologram(A,hx,hy,LA): 

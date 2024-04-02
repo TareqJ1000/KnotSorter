@@ -7,13 +7,14 @@ Created on Thu Jan 25 14:15:29 2024
 
 import numpy as np 
 import scipy as sp
+from scipy import ndimage
 import pygad
 import yaml 
 import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain, norm_field 
+from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain, norm_field, shannon_entropy
 from scipy.fft import ifft2, ifftshift, fft2, fftshift
 
 import matplotlib.pyplot as plt 
@@ -28,6 +29,12 @@ parser.add_argument('--ii', dest='ii', type=int,
     default=None, help='')
 args = parser.parse_args()
 shift = args.ii
+
+# *** OMIT IN CLUSTER 
+
+shift = 0
+
+# *** OMIT IN CLUSTER
 
 # This function keeps track of the generation number + best fitness
 
@@ -64,6 +71,8 @@ GA Parameters
 '''
 
 num_generations = int(eval(cnfg['num_of_gens']))
+gen_start = int(eval(cnfg['gen_start'])) # Number of generations for the initial population
+
 num_parents_mating = cnfg['parents_mating']
 
 sol_per_pop = cnfg['sol_per_pop'] # number of parents in the population?? 
@@ -87,6 +96,9 @@ random_mutation_min_val = -np.pi
 random_mutation_max_val =  np.pi
 
 gen_saturate = cnfg['gen_saturate']
+
+
+last_pop = 0
 
 '''
 Define the initial field 
@@ -132,6 +144,7 @@ We run this at the end of every generation. Here, we save the best parameters af
 '''
 
 def on_gen(ga_instance):
+    print(np.shape(ga_instance.population))
     print("Generation : ", ga_instance.generations_completed)
     print("Fitness of the best solution :", ga_instance.best_solution()[1])
     solution =  ga_instance.best_solution()[0]
@@ -168,27 +181,28 @@ def on_gen(ga_instance):
         plt.plot(ga_instance.best_solutions_fitness)
         plt.savefig(f"plots/{ga_instance_name}/fitness_{ga_instance.generations_completed}.jpg")
         plt.show()
-'''
-This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
-'''
-
-def fitness_func(ga_instance, solution, solution_idx):
-
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
-
-    for ii in range(num_of_phase_maps):
-        # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
-        # Apply gaussian filter 
-        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        phase_maps[ii] = np.exp(1j*temp)
-
+        
+        
+        
+        
+def compute_sorting_performance(phase_maps):
+    
+    # Make the dimensionality of our sorting in terms of # of modes
+    d = len(list_of_OAMs)
+    
+    
     # Now, this is the fitness parameter 
-
     sorting_performance = 0  
 
-    for ii in range(len(list_of_OAMs)):
+    
+    # Actually, let's introduce the crosstalk matrix 
+    crosstalk_matrix = np.zeros((2,2))
+    
+    # Let's introduce the secret key rate here, actually. 
+    secret_key = 0
+    
+
+    for ii in range(d):
 
         # Define initial OAM field and correct output channel 
 
@@ -197,7 +211,11 @@ def fitness_func(ga_instance, solution, solution_idx):
         # Do a proper normalization on the incident field 
         
         field = norm_field(field,h)
-
+        
+        # Compute the initial field intensity. This will be important for later
+        
+        int_knot = np.sum(np.abs(field)**2)
+    
         # modulate the field by the first phase map 
 
         field_mod_1 = field*phase_maps[0]
@@ -237,14 +255,92 @@ def fitness_func(ga_instance, solution, solution_idx):
         temp_index = np.delete(full_index, ii)
         # Sum up the "incorrect" channels 
         incorrect_chans = 0
+        
         for ind in temp_index:
             field_in_pupil = final_field_int*output_chans[ind]
             incorrect_chans += np.sum(field_in_pupil)
+            
         # Now, evaluate the sorting performance 
         correct_chans = np.sum(final_field_int*output_chans[ii])
         sorting_performance += correct_chans - incorrect_chans
-     
+        
+        # Compute the detector effeciency 
+        detect_eff = correct_chans/int_knot 
+        crosstalk_matrix[ii,ii] = detect_eff 
+        
+        # Compute the crosstalk 
+        crosstalk_eff = incorrect_chans/int_knot
+        crosstalk_matrix[ii, (ii+1)%2] = crosstalk_eff 
+    
+    # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
+    
+    qber = crosstalk_matrix[0,1] + crosstalk_matrix[1,0]
+    
+    # Compute the secret key rate
+    secret_key = np.log2(d) - 2*shannon_entropy(qber,d)
+        
+    return sorting_performance, crosstalk_matrix, secret_key
+    
+
+'''
+This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
+'''
+
+def fitness_func_sorting(ga_instance, solution, solution_idx):
+
+    # Create the phase map(s) by reshaping the solution array
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+
+    for ii in range(num_of_phase_maps):
+        # Reshape solution to phase map 
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        # Apply gaussian filter 
+        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        phase_maps[ii] = np.exp(1j*temp)
+    
+    # Compute sorting performance 
+    sorting_performance,*_ = compute_sorting_performance(phase_maps)
+    
     return sorting_performance
+
+def fitness_func_crosstalk(ga_instance, solution, solution_idx):
+    # Create the phase map(s) by reshaping the solution array
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+
+    for ii in range(num_of_phase_maps):
+        # Reshape solution to phase map 
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        # Apply gaussian filter 
+        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        phase_maps[ii] = np.exp(1j*temp)
+    
+    # Compute sorting performance 
+    sorting_performance, crosstalk_matrix, _ = compute_sorting_performance(phase_maps)
+    
+    # Product of the sorting performance w/ determinant of the crosstalk matrix makes up our new metric. 
+    crosstalk_neo = sorting_performance*np.linalg.det(crosstalk_matrix)
+    
+    return crosstalk_neo
+
+
+def fitness_func_secretKey(ga_instance, solution, solution_idx):
+    
+    # Create the phase map(s) by reshaping the solution array
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+
+    for ii in range(num_of_phase_maps):
+        # Reshape solution to phase map 
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        # Apply gaussian filter 
+        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        phase_maps[ii] = np.exp(1j*temp)
+    
+    # Compute sorting performance 
+    sorting_performance, _, secret_key = compute_sorting_performance(phase_maps)
+    
+    sorting_performance_neo = sorting_performance*secret_key
+    
+    return sorting_performance_neo
 
 
 # c and k are empirical scaling factors that control the probability distribution. 
@@ -282,12 +378,23 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
                 
     return parents, np.array(parents_indices)
 
-# IT BEGINS
 
-fitness_function = fitness_func 
-ga_instance = pygad.GA(num_generations=num_generations,
+
+# In principle, we would save the last population of the previous GA instance, then rerun a second GA using this population as the starting one 
+
+def on_stop(ga_instance, last_population_fitness):
+    print("Initial optimization done, saving last population...")
+    global last_pop 
+    last_pop = ga_instance.population 
+    
+
+
+
+# We begin by optimizing just the sorting performance for the first start_gen generations
+
+ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_function,
+                       fitness_func=fitness_func_sorting,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,
@@ -300,12 +407,35 @@ ga_instance = pygad.GA(num_generations=num_generations,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
+                       on_stop = on_stop)
+
+
+
+# We then start another GA instance w/ the last population where we start to optimize together the sorting performance and the determinant. 
+
+ga_instance_sorting.run()
+
+ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
+                       num_parents_mating=num_parents_mating,
+                       fitness_func=fitness_func_secretKey,
+                       sol_per_pop=sol_per_pop,
+                       num_genes=num_genes,
+                       init_range_low=init_range_low,
+                       init_range_high=init_range_high,
+                       initial_population = last_pop, 
+                       parent_selection_type=exp_rank_selection,
+                       crossover_type=crossover_type,
+                       mutation_type=mutation_type,
+                       mutation_percent_genes=mutation_percent_genes,
+                       mutation_probability = mutation_probability,
+                       random_mutation_min_val = random_mutation_min_val, 
+                       random_mutation_max_val = random_mutation_max_val, 
+                       on_generation=on_gen, 
                        stop_criteria=f"saturate_{gen_saturate}")
 
-ga_instance.run()
 
 
-
+ga_instance_crosstalk.run()
 
 '''
 
