@@ -32,7 +32,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 0
+shift = 10
 
 # *** OMIT IN CLUSTER
 
@@ -343,6 +343,26 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
     return sorting_performance_neo
 
 
+def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
+    # Create the phase map(s) by reshaping the solution array
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+
+    for ii in range(num_of_phase_maps):
+        # Reshape solution to phase map 
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        # Apply gaussian filter 
+        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
+        phase_maps[ii] = np.exp(1j*temp)
+    
+    # Compute sorting performance 
+    sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps)
+    
+    sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
+    
+    return sorting_performance_neo 
+    
+
+
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are
 # k determines how peaked is the p-dist. 
@@ -436,6 +456,8 @@ ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
 
 
 ga_instance_crosstalk.run()
+
+
 
 '''
 
