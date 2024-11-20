@@ -3,10 +3,10 @@ dim: 128
 num_output_chans: 2
 output_chan_width: 0.23 # in mm 
 LG_modes: [[0,0], [2,0]]
-w0: 0.04 # in mm
+w0: 0.10 # in mm
 fourier_length: 10 # in cm 
-num_maps: 1
-gauss_filter_sigma: 500
+num_maps: 2
+gauss_filter_sigma: 1000
 channel_sep: 1.5
 simulateLens: False
 
@@ -18,16 +18,16 @@ sol_per_pop: 10
 crossover_prob: None
 mutation_type: 'adaptive'
 mutation_percent: 15
-mutation_prob: (0.10,0.05)
+mutation_prob: (0.10,0.01)
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 1.0
-ga_instance: "knots_width_004"
+ga_instance: "knots_G1000_twoPlane"
 
 # Do we generate knots instead? 
 isKnot: True
 knotType: ['Trefoil', 'Cinquefoil']
-shapeParams: [[1,1,1.2],[2.5,2.5,1.2]]
+shapeParams: [[1,1,1.2],[2.5,2.5,1.6]]
 
 
 
