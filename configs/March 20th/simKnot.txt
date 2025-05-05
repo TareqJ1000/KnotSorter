@@ -1,3 +1,0 @@
-knotType: 'Trefoil'
-shapeParams: [1,1,1.2]
-w0: 0.07 

@@ -32,7 +32,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 10
+shift = 1
 
 # *** OMIT IN CLUSTER
 
@@ -66,6 +66,16 @@ simulateLens = cnfg['simulateLens'] # Do we simulate the phase effects of our le
 fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
 GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
 
+fixedRotation = cnfg['fixedRotation'] # Do we apply a fixed rotation onto the knotted field 
+randomRotation = cnfg['randomRotation'] # Do we apply a random rotation? This overrides the fixed rotation option if true, since we randomize the rotation angle per iteration. 
+
+
+rot_angle = 0
+if(fixedRotation):
+    rot_angle = eval(cnfg['rot_angle']) # Fixed rotation angle
+#else:
+    #rot_angle = 0 # No rotation 
+    
 '''
 GA Parameters
 '''
@@ -96,7 +106,6 @@ random_mutation_min_val = -np.pi
 random_mutation_max_val =  np.pi
 
 gen_saturate = cnfg['gen_saturate']
-
 
 last_pop = 0
 
@@ -138,7 +147,52 @@ if(isKnot):
 else:
     for ii in range(len(LG_modes)):
         list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
-       
+
+
+# NEW! We define a function which computes the rotated knotted field.
+# We assume that we have pre-defined the parameters making up the knotted field. 
+# Bad practice, I know. 
+
+def create_rotated_knots(rot_phi):
+    
+    # Apply rotation operator on coords. Update: The rotation should be 
+    # X_rot = np.cos(rot_phi)*X - np.sin(rot_phi)*Y
+    # Y_rot = np.sin(rot_phi)*X + np.cos(rot_phi)*Y
+
+    xx,yy=np.meshgrid(X ,Y);
+    
+    xx_rot = np.cos(rot_phi)*xx - np.sin(rot_phi)*yy
+    yy_rot = np.sin(rot_phi)*xx + np.cos(rot_phi)*yy
+
+    r, phi= cart2pol(xx_rot,yy_rot)
+
+    ''' 
+    Create the OAM beams that we need to sort 
+    '''
+    # Now create a list containing 'oamMode' objects 
+
+    list_of_OAMs = []
+
+    if(isKnot):
+        for ii in range(len(knotType)):
+            field = setKnotType(r, phi, w0, knotType[ii], shapeParams[ii])
+            list_of_OAMs.append(oamModes(field, output_chans[ii]))
+    else:
+        for ii in range(len(LG_modes)):
+            list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
+    
+    
+    #plt.imshow(np.angle(list_of_OAMs[0].oamBeam))
+    #plt.show()
+    #input()
+    return list_of_OAMs
+
+
+# NEW: apply rotation onto the incident field
+#print("yep")
+#list_of_rotated_OAMs = create_rotated_knots(rot_angle)
+#print("okay")
+    
 '''
 We run this at the end of every generation. Here, we save the best parameters after every generation
 '''
@@ -183,24 +237,19 @@ def on_gen(ga_instance):
         plt.show()
         
         
-        
-        
-def compute_sorting_performance(phase_maps):
+def compute_sorting_performance(phase_maps, list_of_OAMs):
     
     # Make the dimensionality of our sorting in terms of # of modes
     d = len(list_of_OAMs)
     
-    
     # Now, this is the fitness parameter 
     sorting_performance = 0  
 
-    
     # Actually, let's introduce the crosstalk matrix 
     crosstalk_matrix = np.zeros((2,2))
     
     # Let's introduce the secret key rate here, actually. 
     secret_key = 0
-    
 
     for ii in range(d):
 
@@ -287,9 +336,16 @@ This computes the fitness function that we use to improve the GA. We can adapt t
 '''
 
 def fitness_func_sorting(ga_instance, solution, solution_idx):
-
+    
+    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
+        rotation_angle = np.random.uniform(0, 2*np.pi)
+    else: 
+        rotation_angle = rot_angle
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    
+    # NEW: apply rotation onto the incident field
+    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
@@ -299,13 +355,13 @@ def fitness_func_sorting(ga_instance, solution, solution_idx):
         phase_maps[ii] = np.exp(1j*temp)
     
     # Compute sorting performance 
-    sorting_performance,*_ = compute_sorting_performance(phase_maps)
+    sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     
     return sorting_performance
 
 def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
@@ -325,8 +381,15 @@ def fitness_func_crosstalk(ga_instance, solution, solution_idx):
 
 def fitness_func_secretKey(ga_instance, solution, solution_idx):
     
+    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
+        rotation_angle = np.random.uniform(0, 2*np.pi)
+    elif (fixedRotation):
+        rotation_angle = rot_angle
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    
+    # NEW: apply rotation onto the incident field
+    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
@@ -336,7 +399,7 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
         phase_maps[ii] = np.exp(1j*temp)
     
     # Compute sorting performance 
-    sorting_performance, _, secret_key = compute_sorting_performance(phase_maps)
+    sorting_performance, _, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     
     sorting_performance_neo = sorting_performance*secret_key
     
@@ -344,9 +407,18 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
 
 
 def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
 
+    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
+        rotation_angle = np.random.uniform(0, 2*np.pi)
+    elif (fixedRotation):
+        rotation_angle = rot_angle
+    
+    # Create the phase map(s) by reshaping the solution array
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    
+    # NEW: apply rotation onto the incident field
+    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
+    
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
@@ -355,18 +427,15 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
         phase_maps[ii] = np.exp(1j*temp)
     
     # Compute sorting performance 
-    sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps)
+    sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     
     sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
     
     return sorting_performance_neo 
     
-
-
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are
 # k determines how peaked is the p-dist. 
-
 
 def exp_rank_selection(fitness, num_parents, ga_instance):
     
@@ -399,7 +468,6 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
     return parents, np.array(parents_indices)
 
 
-
 # In principle, we would save the last population of the previous GA instance, then rerun a second GA using this population as the starting one 
 
 def on_stop(ga_instance, last_population_fitness):
@@ -407,8 +475,6 @@ def on_stop(ga_instance, last_population_fitness):
     global last_pop 
     last_pop = ga_instance.population 
     
-
-
 
 # We begin by optimizing just the sorting performance for the first start_gen generations
 
@@ -430,14 +496,13 @@ ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        on_stop = on_stop)
 
 
-
 # We then start another GA instance w/ the last population where we start to optimize together the sorting performance and the determinant. 
 
 ga_instance_sorting.run()
 
 ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func_secretKey,
+                       fitness_func=fitness_func_secretKey_crosstalk,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,

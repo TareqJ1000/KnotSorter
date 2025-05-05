@@ -9,6 +9,7 @@ num_maps: 1
 gauss_filter_sigma: 1000
 channel_sep: 1.5
 simulateLens: False
+rot_angle: 0
 
 # Genetic Parameters
 num_of_gens: 4.e5

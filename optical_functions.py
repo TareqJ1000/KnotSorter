@@ -187,7 +187,7 @@ def output_chan(X, Y, rad_spot, maxx, num_of_spots):
         spot_loc_x.append(np.random.uniform(-maxx+rad_spot,maxx-rad_spot))
         spot_loc_y.append(np.random.uniform(-maxx+rad_spot,maxx-rad_spot))
     
-    fields = np.empty((num_of_spots, N, N), dtype=np.complex64)
+    fields = np.empty((num_of_spots, N, N), dtype=np.complex128)
     # Space definition 
     for ii in range(num_of_spots):
         X=np.linspace(-maxx,maxx,N) + spot_loc_x[ii]
@@ -246,6 +246,7 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
     
     rs = rr/w0 # dimensionless, scaled beam coordinate
     a,b,kk = shapeParams
+    i = 1j
     
     if (knotType == 'Trefoil'): # Input beam profile (Trefoil)
         AK=np.exp(-(rs/(np.sqrt(2)*kk))**2)*(1 - rs**2 - 4 * (a**2 - b**2) * rs**3 - rs**4 + rs**6 - 2 *(a - b)**2 * (rs*np.exp(-1j*phi))**3 - 2 *(a + b)**2 * (rs*np.exp(1j*phi))**3)
@@ -255,7 +256,36 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
 
     if (knotType == 'Cinquefoil'): # Input beam profile (Cinquefoil)
         AK = np.exp(-(rs/(np.sqrt(2)*kk))**2) * (1 + rs**2 - 2*rs**4 - 16*(a**2 - b**2)*rs**5 - 2*rs**6 + rs**8 + rs**10 - (8*((a-b)**2)*(rs**5)*np.exp(-1j*5*(phi))) - (8*((a+b)**2)*(rs**5)*np.exp(1j*5*(phi))))
-   
+        
+    if (knotType == 'Figure-8'): # Input beam profile (Figure-8)
+        AK = result = (
+        (8 * a**3 * rs**6 * np.exp(-2 * i * phi)) +
+        (8 * a**3 * rs**6 * np.exp(2 * i * phi)) +
+        (16 * a**3 * rs**4 * np.exp(-2 * i * phi)) +
+        (16 * a**3 * rs**4 * np.exp(2 * i * phi)) +
+        (8 * a**3 * rs**2 * np.exp(-2 * i * phi)) +
+        (8 * a**3 * rs**2 * np.exp(2 * i * phi)) +
+        (12 * a**2 * rs**8) +
+        (24 * a**2 * rs**6) -
+        (24 * a**2 * rs**2) -
+        (12 * a**2) +
+        (6 * a * b**2 * rs**6 * np.exp(-2 * i * phi)) +
+        (6 * a * b**2 * rs**6 * np.exp(2 * i * phi)) +
+        (12 * a * b**2 * rs**4 * np.exp(-2 * i * phi)) +
+        (12 * a * b**2 * rs**4 * np.exp(2 * i * phi)) +
+        (24 * a * b * rs**2 * np.exp(-2 * i * phi)) -
+        (24 * a * b * rs**2 * np.exp(2 * i * phi)) -
+        (4 * b**3 * rs**4 * np.exp(-4 * i * phi)) +
+        (4 * b**3 * rs**4 * np.exp(4 * i * phi)) -
+        (3 * b**2 * rs**8) -
+        (6 * b**2 * rs**6) +
+        (6 * b**2 * rs**2) +
+        (3 * b**2) -
+        (16 * rs**8) +
+        (32 * rs**6) -
+        (32 * rs**2) +
+        16)*np.exp(-(rs/(np.sqrt(2)*kk))**2) 
+    
     return AK
 
 
