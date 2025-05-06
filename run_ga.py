@@ -14,7 +14,7 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain, norm_field, shannon_entropy
+from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, output_chan_triangle, setKnotType, OAMWithGratings, Hologram, wrap_to_domain, norm_field, shannon_entropy
 from scipy.fft import ifft2, ifftshift, fft2, fftshift
 
 import matplotlib.pyplot as plt 
@@ -32,7 +32,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 1
+shift = 4
 
 # *** OMIT IN CLUSTER
 
@@ -138,8 +138,15 @@ Create the OAM beams that we need to sort
 # Now create a list containing 'oamMode' objects 
 
 list_of_OAMs = []
-output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans, chan_sep=channel_sep)
 
+if (num_of_output_chans==3): # We adapt a triangular configuration 
+   # def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
+    output_chans = output_chan_triangle(X, Y, output_chan_width, maxx, chan_sep=channel_sep)
+    
+else:
+    output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans, chan_sep=channel_sep)
+    
+    
 if(isKnot):
     for ii in range(len(knotType)):
         list_of_OAMs.append(oamModes(setKnotType(r, phi, w0, knotType[ii], shapeParams[ii]), output_chans[ii]))
@@ -246,7 +253,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
     sorting_performance = 0  
 
     # Actually, let's introduce the crosstalk matrix 
-    crosstalk_matrix = np.zeros((2,2))
+    crosstalk_matrix = np.zeros((num_of_output_chans, num_of_output_chans))
     
     # Let's introduce the secret key rate here, actually. 
     secret_key = 0
@@ -304,10 +311,16 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         temp_index = np.delete(full_index, ii)
         # Sum up the "incorrect" channels 
         incorrect_chans = 0
+        # New: to construct our crosstalk matrix, let's store the individual intensities
+        incorrect_chan_ints = []
         
         for ind in temp_index:
             field_in_pupil = final_field_int*output_chans[ind]
+            incorrect_chan_ints.append(np.sum(field_in_pupil))
             incorrect_chans += np.sum(field_in_pupil)
+            
+        #print(temp_index)
+        #input()
             
         # Now, evaluate the sorting performance 
         correct_chans = np.sum(final_field_int*output_chans[ii])
@@ -317,15 +330,22 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         detect_eff = correct_chans/int_knot 
         crosstalk_matrix[ii,ii] = detect_eff 
         
-        # Compute the crosstalk 
-        crosstalk_eff = incorrect_chans/int_knot
-        crosstalk_matrix[ii, (ii+1)%2] = crosstalk_eff 
+        # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
+        
+        for jj, ind in enumerate(temp_index):
+            #(jj)
+            #print(ind)
+            crosstalk_eff = incorrect_chan_ints[jj]/int_knot
+            crosstalk_matrix[ii, ind] = crosstalk_eff
+            #input()
+            
+        #crosstalk_eff = incorrect_chans/int_knot
+        #crosstalk_matrix[ii, (ii+1)%num_of_output_chans] = crosstalk_eff 
     
     # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
-    
-    qber = crosstalk_matrix[0,1] + crosstalk_matrix[1,0]
-    
-    # Compute the secret key rate
+    qber = crosstalk_matrix.sum() - np.trace(crosstalk_matrix)
+
+        # Compute the secret key rate
     secret_key = np.log2(d) - 2*shannon_entropy(qber,d)
         
     return sorting_performance, crosstalk_matrix, secret_key

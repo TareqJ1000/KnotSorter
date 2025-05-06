@@ -201,14 +201,12 @@ def output_chan(X, Y, rad_spot, maxx, num_of_spots):
     return fields  # In principle, it suffices to return fields. 
 
 
-
 # Function that outputs channels at more predefined, symmetric points
 
 def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
     N = len(X)
     spot_loc_x = []
     spot_loc_y = []
-
     
     for ii in range(int(num_of_spots/2)):
         
@@ -218,7 +216,7 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
             
             spot_loc_x.append(-(ii+1)*chan_sep*mm)
             spot_loc_y.append(0)
-        
+    
     fields = np.empty((num_of_spots, N, N))
     # Space definition 
     for ii in range(num_of_spots):
@@ -232,6 +230,43 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
     
     return fields # In principle, it suffices to return fields. 
 
+# This creates a specific triangle-like configuration for the symmetric sorting of three modes
+
+def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
+    
+    # The y-offset is set so that we form an equilbrium triangle 
+    
+    y_offset = (np.sqrt(3)*(chan_sep*mm))/2
+    
+    N = len(X)
+    spot_loc_x = []
+    spot_loc_y = []
+
+    # First two symmetric spots
+    spot_loc_x.append(chan_sep * mm)
+    spot_loc_y.append(0)
+
+    spot_loc_x.append(-chan_sep * mm)
+    spot_loc_y.append(0)
+
+    # Third spot centered horizontally, shifted down vertically
+    spot_loc_x.append(0)
+    spot_loc_y.append(-y_offset)
+
+    num_of_spots = 3  # Explicitly define since we're overriding symmetry
+    fields = np.empty((num_of_spots, N, N))
+
+    # Generate spots
+    for ii in range(num_of_spots):
+        X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
+        Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
+        h = np.abs(X_shifted[1] - X_shifted[2])
+        xx, yy = np.meshgrid(X_shifted, Y_shifted)
+        r, phi = cart2pol(xx, yy)
+
+        fields[ii] = pupil_function(r, rad_spot)
+
+    return fields
 
 '''
 Generates knots
@@ -258,6 +293,7 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
         AK = np.exp(-(rs/(np.sqrt(2)*kk))**2) * (1 + rs**2 - 2*rs**4 - 16*(a**2 - b**2)*rs**5 - 2*rs**6 + rs**8 + rs**10 - (8*((a-b)**2)*(rs**5)*np.exp(-1j*5*(phi))) - (8*((a+b)**2)*(rs**5)*np.exp(1j*5*(phi))))
         
     if (knotType == 'Figure-8'): # Input beam profile (Figure-8)
+    
         AK = result = (
         (8 * a**3 * rs**6 * np.exp(-2 * i * phi)) +
         (8 * a**3 * rs**6 * np.exp(2 * i * phi)) +
@@ -326,7 +362,6 @@ def norm_field(field,h):
 
 def shannon_entropy(x,d):
     return (-x*np.log2(x/(d-1)) - (1-x)*np.log2(1-x))
-
 
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 
