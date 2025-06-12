@@ -32,7 +32,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 4
+# shift = 4
 
 # *** OMIT IN CLUSTER
 
@@ -68,7 +68,6 @@ GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian 
 
 fixedRotation = cnfg['fixedRotation'] # Do we apply a fixed rotation onto the knotted field 
 randomRotation = cnfg['randomRotation'] # Do we apply a random rotation? This overrides the fixed rotation option if true, since we randomize the rotation angle per iteration. 
-
 
 rot_angle = 0
 if(fixedRotation):
@@ -316,14 +315,11 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         
         for ind in temp_index:
             field_in_pupil = final_field_int*output_chans[ind]
-            incorrect_chan_ints.append(np.sum(field_in_pupil))
-            incorrect_chans += np.sum(field_in_pupil)
-            
-        #print(temp_index)
-        #input()
+            incorrect_chan_ints.append(np.sum(field_in_pupil)/int_knot)
+            incorrect_chans += np.sum(field_in_pupil)/int_knot
             
         # Now, evaluate the sorting performance 
-        correct_chans = np.sum(final_field_int*output_chans[ii])
+        correct_chans = np.sum(final_field_int*output_chans[ii])/int_knot # normalization is mode-specific
         sorting_performance += correct_chans - incorrect_chans
         
         # Compute the detector effeciency 
@@ -335,7 +331,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         for jj, ind in enumerate(temp_index):
             #(jj)
             #print(ind)
-            crosstalk_eff = incorrect_chan_ints[jj]/int_knot
+            crosstalk_eff = incorrect_chan_ints[jj]
             crosstalk_matrix[ii, ind] = crosstalk_eff
             #input()
             
@@ -343,14 +339,13 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         #crosstalk_matrix[ii, (ii+1)%num_of_output_chans] = crosstalk_eff 
     
     # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
-    qber = crosstalk_matrix.sum() - np.trace(crosstalk_matrix)
+    qber = ((d-1)/d**2)*(crosstalk_matrix.sum() - np.trace(crosstalk_matrix)) # This bounds the qber to 1, in principle
 
-        # Compute the secret key rate
+    # Compute the secret key rate
     secret_key = np.log2(d) - 2*shannon_entropy(qber,d)
         
-    return sorting_performance, crosstalk_matrix, secret_key
+    return ((1/d)*sorting_performance), crosstalk_matrix, secret_key
     
-
 '''
 This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
 '''
@@ -522,7 +517,7 @@ ga_instance_sorting.run()
 
 ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func_secretKey_crosstalk,
+                       fitness_func=fitness_func_secretKey,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,
