@@ -1,5 +1,5 @@
-knotType: 'Cinquefoil'
-shapeParams: [2.5,2.5,1.6]
+knotType: 'Trefoil'
+shapeParams: [1.0,1.0,1.2]
 w0: 0.10
 z0: 80
-nz: 30
+nz: 60

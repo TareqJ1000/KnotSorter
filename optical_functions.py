@@ -9,15 +9,15 @@ import matplotlib.pyplot as plt
 import math
 import os
 
-
-import diffractsim
-diffractsim.set_backend("CPU")
-from diffractsim import nm, mm, cm, um
-
 from PIL import Image
 
-# Optical Functions
 
+# CONSTANTS 
+
+nm = 1e-9 
+um = 1e-6
+mm = 1e-3
+cm = 1e-2
 
 '''
 This propagates the beam using a Fresnal Diffraction Transfer Function approach. 
@@ -43,14 +43,12 @@ def propTF(u1,L,la,z):
     
     return u2 
 
-
 '''
 This function implements the Fraufoner Diffraction Transfer Approach instead. Translation from Voelz
 u1 - source field
 L1 - full observation side length 
 la - wavelength 
 z - prop distance
-
 
 returns: 
 u2 - observation field at z
@@ -128,20 +126,31 @@ def LG(RHO,PHI,ell,p,w0,h,z,k):
 Jointly plots the intensity and phase patterns of the complex field.
 
 Ex - complex 2D array -  field
+phase - boolean - controls whether or not we wanna plot the phase
 '''
 
-def TotInt(Ex):
-    fig, ax =  plt.subplots(1,2,figsize=(10,10))
-    ax[0].set_title('Intensity')
-    intensity = ax[0].imshow(abs(Ex)**2,cmap="gist_gray")
-    ax[0].axis('off')
-    cbar=fig.colorbar(intensity, ax=ax[0])
+def TotInt(Ex, phase=True):
+
+    if (phase==False): # Just plot the intensity
+        fig, ax = plt.subplots(1,1, figsize=(8,4))
+        #ax.set_title('Intensity')
+        intensity = ax.imshow(abs(Ex)**2, cmap="gist_gray")
+        ax.axis('off')
+        cbar = fig.colorbar(intensity, ax=ax)
     
-    ax[1].set_title('Phase')
-    phase = ax[1].imshow(np.angle(Ex), cmap="hsv", interpolation='nearest')
-    ax[1].axis('off')
-    cbar=fig.colorbar(phase, ax=ax[1])
-    plt.show()
+    else:
+
+        fig, ax =  plt.subplots(1,2,figsize=(8,4))
+        ax[0].set_title('Intensity')
+        intensity = ax[0].imshow(abs(Ex)**2,cmap="gist_gray")
+        ax[0].axis('off')
+        cbar=fig.colorbar(intensity, ax=ax[0])
+        
+        ax[1].set_title('Phase')
+        phase = ax[1].imshow(np.angle(Ex), cmap="hsv", interpolation='nearest')
+        ax[1].axis('off')
+        cbar=fig.colorbar(phase, ax=ax[1])
+        plt.show()
     
     
 '''
@@ -261,7 +270,6 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
 
 # This function generates phase gratings in reminisce of OAM gratings 
 
-
 def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
     
     crow, ccol = int(rows / 2)+xoffset, int(cols / 2)+yoffset
@@ -288,7 +296,11 @@ def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
 # This is a simple routine that applies normalization to the field, given also the numerical step size. 
 
 def norm_field(field,h):
-    norm_fac=np.sqrt(np.sum(np.abs(field*h)**2))
+    norm_fac=np.sqrt(np.sum(np.abs(field)**2*h**2))
+    # To check, what do we observe when we compute the norm of our field? 
+    norm_check = np.sum(np.abs(field/norm_fac)**2*h**2)
+    # This should give us 1
+    print(norm_check)
     return field/norm_fac 
 
 
