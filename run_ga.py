@@ -184,12 +184,10 @@ def on_gen(ga_instance):
         
         
         
-        
 def compute_sorting_performance(phase_maps):
     
     # Make the dimensionality of our sorting in terms of # of modes
     d = len(list_of_OAMs)
-    
     
     # Now, this is the fitness parameter 
     sorting_performance = 0  
