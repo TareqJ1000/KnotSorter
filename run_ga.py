@@ -14,13 +14,19 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, cart2pol, oamModes, output_chan, output_chan_symmetric, setKnotType, OAMWithGratings, Hologram, wrap_to_domain, norm_field, shannon_entropy
+from optical_functions import LG, propFF, propTF, cart2pol, oamModes, output_chan, output_chan_symmetric, output_chan_triangle, setKnotType, norm_field, shannon_entropy
 from scipy.fft import ifft2, ifftshift, fft2, fftshift
 
 import matplotlib.pyplot as plt 
 
-from diffractsim import cm, mm, um 
+#from diffractsim import cm, mm, um 
 import os
+
+# physical constants
+cm = 1e-2
+mm = 1e-3
+um = 1e-6 
+nm = 1e-9
 
 # Remove if used outside of the cluster 
 
@@ -32,7 +38,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 10
+shift = 0
 
 # *** OMIT IN CLUSTER
 
@@ -60,10 +66,29 @@ w0 = cnfg['w0'] * mm # in mm!!
 isKnot = cnfg['isKnot']
 knotType = cnfg['knotType']
 shapeParams = cnfg['shapeParams']
-num_of_phase_maps = cnfg['num_maps'] # can be 1 or 2!
 
 simulateLens = cnfg['simulateLens'] # Do we simulate the phase effects of our lenses, or do we neglect them and take the fourier and inverse fourier transform? 
 fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
+
+multiPhaseLens = cnfg['multiPhaseLens'] # Enables multiple phase screens in the near field and the far field. 
+multiPhase = cnfg['multiPhase'] # Enables a simplified experiment where we propagate the knot through multiple phase modulations. Does not involve a lens
+
+# Settings specific for the Multi-Phase Experiment
+
+num_phase_maps_near = cnfg['num_phase_maps_near']  # Number of phase maps in the near field
+num_phase_maps_far = cnfg['num_phase_maps_far'] # Number of phase maps in the far field
+z_o = cnfg['z_o']*cm # Distance between successive phase maps (if applicable). We use Fresnel propagation
+
+# Determine total number of phase maps 
+
+num_of_phase_maps = num_phase_maps_near + num_phase_maps_far
+
+# Settings specific for rotating the incident field
+
+rot_angle = eval(cnfg['rot_angle'])
+fixedRotation = cnfg['fixedRotation']
+randomRotation = cnfg['randomRotation']
+
 GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
 
 '''
@@ -97,12 +122,12 @@ random_mutation_max_val =  np.pi
 
 gen_saturate = cnfg['gen_saturate']
 
-
 last_pop = 0
 
 '''
 Define the initial field 
 '''
+
 # Define the coordinate space 
 
 la = 0.78*um
@@ -120,7 +145,7 @@ h = dx
 X = dx*(np.arange(N) - N //2)
 Y = dy*(np.arange(N) - N //2)
 
-xx,yy=np.meshgrid(X,Y);
+xx,yy=np.meshgrid(X,Y)
 r, phi= cart2pol(xx,yy)
 
 ''' 
@@ -129,8 +154,15 @@ Create the OAM beams that we need to sort
 # Now create a list containing 'oamMode' objects 
 
 list_of_OAMs = []
-output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans, chan_sep=channel_sep)
 
+if (num_of_output_chans==3): # We adapt a triangular configuration 
+   # def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
+    output_chans = output_chan_triangle(X, Y, output_chan_width, maxx, chan_sep=channel_sep)
+    
+else:
+    output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans, chan_sep=channel_sep)
+    
+    
 if(isKnot):
     for ii in range(len(knotType)):
         list_of_OAMs.append(oamModes(setKnotType(r, phi, w0, knotType[ii], shapeParams[ii]), output_chans[ii]))
@@ -138,7 +170,52 @@ if(isKnot):
 else:
     for ii in range(len(LG_modes)):
         list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
-       
+
+
+# NEW! We define a function which computes the rotated knotted field.
+# We assume that we have pre-defined the parameters making up the knotted field. 
+# Bad practice, I know. 
+
+def create_rotated_knots(rot_phi):
+    
+    # Apply rotation operator on coords. Update: The rotation should be 
+    # X_rot = np.cos(rot_phi)*X - np.sin(rot_phi)*Y
+    # Y_rot = np.sin(rot_phi)*X + np.cos(rot_phi)*Y
+
+    xx,yy=np.meshgrid(X ,Y);
+    
+    xx_rot = np.cos(rot_phi)*xx - np.sin(rot_phi)*yy
+    yy_rot = np.sin(rot_phi)*xx + np.cos(rot_phi)*yy
+
+    r, phi= cart2pol(xx_rot,yy_rot)
+
+    ''' 
+    Create the OAM beams that we need to sort 
+    '''
+    # Now create a list containing 'oamMode' objects 
+
+    list_of_OAMs = []
+
+    if(isKnot):
+        for ii in range(len(knotType)):
+            field = setKnotType(r, phi, w0, knotType[ii], shapeParams[ii])
+            list_of_OAMs.append(oamModes(field, output_chans[ii]))
+    else:
+        for ii in range(len(LG_modes)):
+            list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
+    
+    
+    #plt.imshow(np.angle(list_of_OAMs[0].oamBeam))
+    #plt.show()
+    #input()
+    return list_of_OAMs
+
+
+# NEW: apply rotation onto the incident field
+#print("yep")
+#list_of_rotated_OAMs = create_rotated_knots(rot_angle)
+#print("okay")
+    
 '''
 We run this at the end of every generation. Here, we save the best parameters after every generation
 '''
@@ -163,6 +240,12 @@ def on_gen(ga_instance):
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = temp
 
+    # Create best_phases  and ga_instance directory if it doesn't exist
+    if not os.path.exists("best_phases"):
+        os.makedirs("best_phases")
+    
+    if not os.path.exists("genetic_instances"):
+        os.makedirs("genetic_instances")
     
     with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
         pkl.dump(phase_maps, file)
@@ -183,8 +266,7 @@ def on_gen(ga_instance):
         plt.show()
         
         
-        
-def compute_sorting_performance(phase_maps):
+def compute_sorting_performance(phase_maps, list_of_OAMs):
     
     # Make the dimensionality of our sorting in terms of # of modes
     d = len(list_of_OAMs)
@@ -192,13 +274,11 @@ def compute_sorting_performance(phase_maps):
     # Now, this is the fitness parameter 
     sorting_performance = 0  
 
-    
     # Actually, let's introduce the crosstalk matrix 
-    crosstalk_matrix = np.zeros((2,2))
+    crosstalk_matrix = np.zeros((num_of_output_chans, num_of_output_chans))
     
     # Let's introduce the secret key rate here, actually. 
     secret_key = 0
-    
 
     for ii in range(d):
 
@@ -218,30 +298,75 @@ def compute_sorting_performance(phase_maps):
 
         field_mod_1 = field*phase_maps[0]
 
-        # let's simulate the propagation of the lens
-        if (simulateLens):
-            field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
-        else: # Take the fourier transform 
-            field_lens = fftshift(fft2(field_mod_1))
+        # Proceed with our chosen experiment
+
+        # Case 1: We are doing the experiment without any lenses
+
+        if (multiPhase): # Propagate the field by a distance z_o and apply the second phase screen
+            field_after = field_mod_1
+
+            for ii in range(1, len(phase_maps)):
+                # Propagate the beam by a distance z_o
+                field_after = propTF(field_after, maxx, la, z_o)
+
+                # Apply the next phase map (if applicable)
+                field_after = field_after*phase_maps[ii]
+
+            # Propagate the beam one final time and observe the final field
+
+            final_field = propTF(field_after, maxx, la, z_o)
+
+        else: # Case 2: We are computing the experiment with the lens 
+
+            if (multiPhaseLens): # Multi-phase experiment with the lens
+                field_after = field_mod_1
+
+                for ii in range(1, 1+num_phase_maps_near):
+                    # Propagate the beam by a distance z_o 
+                    field_after = propTF(field_after, maxx, la, z_o)
+                    # Apply the next phase map in the near field (if applicable)
+                    field_after = field_after*phase_maps[ii]
+                
+                # Fourier transform the beam into the far field
+                field_lens = fftshift(fft2(field_after))
+
+            elif (simulateLens): # We simulate Faunhofer Diffraction for a more accurate representation of lens propagation
+                field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
+        
+            
+            else: # Compute the field at the front focal plane of the lens
+                 field_lens = fftshift(fft2(field_mod_1))
+        
         
         # What happens next depends on whether we have one or two phase maps
         
-        if(num_of_phase_maps==1):
+        if (num_phase_maps_far==0):
             # Compute the field intensity 
             final_field = field_lens
+        
         else:
-            # modulate the field by the second phase map 
-            field_mod_2 = field_lens*phase_maps[1]
+            # Modulate the field by the first far field map
+            field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
+
+            if (multiPhaseLens):
+                field_after_2 = field_mod_2
+                for jj in range(1+num_phase_maps_near, num_of_phase_maps):
+
+                    # Propagate the beam 
+                    field_after_2 = propTF(field_after_2, maxx, la, z_o)
+                    # Apply phase to beam 
+                    field_after_2 = field_after_2*phase_maps[jj]
+            
+                # Apply inverse fourier transform onto beam
+                field_lens_2 = ifft2(ifftshift(field_after_2))
+
             # simulate the lens field again. This is the final field. 
-            if (simulateLens):
+            elif (simulateLens):
                 field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
             else: 
                 field_lens_2 = ifft2(ifftshift(field_mod_2))
-            # compute the field intensity 
-            # field_lens_2 = field_lens_2/np.max(np.abs(field_lens_2))
-            
+
             final_field = field_lens_2
-            #final_field_int = np.abs(field_lens_2)**2
         
         # We normalize the final field and compute the intensity 
         final_field = norm_field(final_field,h)
@@ -253,61 +378,71 @@ def compute_sorting_performance(phase_maps):
         temp_index = np.delete(full_index, ii)
         # Sum up the "incorrect" channels 
         incorrect_chans = 0
+        # New: to construct our crosstalk matrix, let's store the individual intensities
+        incorrect_chan_ints = []
         
         for ind in temp_index:
             field_in_pupil = final_field_int*output_chans[ind]
-            incorrect_chans += np.sum(field_in_pupil)
+            incorrect_chan_ints.append(np.sum(field_in_pupil)/int_knot)
+            incorrect_chans += np.sum(field_in_pupil)/int_knot
             
         # Now, evaluate the sorting performance 
-        correct_chans = np.sum(final_field_int*output_chans[ii])
+        correct_chans = np.sum(final_field_int*output_chans[ii])/int_knot # normalization is mode-specific
         sorting_performance += correct_chans - incorrect_chans
         
         # Compute the detector effeciency 
         detect_eff = correct_chans/int_knot 
         crosstalk_matrix[ii,ii] = detect_eff 
         
-        # Compute the crosstalk 
-        crosstalk_eff = incorrect_chans/int_knot
-        crosstalk_matrix[ii, (ii+1)%2] = crosstalk_eff 
-    
+        # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
+        
+        for jj, ind in enumerate(temp_index):
+            crosstalk_eff = incorrect_chan_ints[jj]
+            crosstalk_matrix[ii, ind] = crosstalk_eff
+
     # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
-    
-    qber = crosstalk_matrix[0,1] + crosstalk_matrix[1,0]
-    
+    qber = ((d-1)/d**2)*(crosstalk_matrix.sum() - np.trace(crosstalk_matrix)) # This bounds the qber to 1, in principle
+
     # Compute the secret key rate
     secret_key = np.log2(d) - 2*shannon_entropy(qber,d)
         
-    return sorting_performance, crosstalk_matrix, secret_key
+    return ((1/d)*sorting_performance), crosstalk_matrix, secret_key
     
-
 '''
 This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
 '''
 
 def fitness_func_sorting(ga_instance, solution, solution_idx):
-
+    
+    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
+        rotation_angle = np.random.uniform(0, 2*np.pi)
+    else: 
+        rotation_angle = rot_angle
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    
+    # NEW: apply rotation onto the incident field
+    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = np.exp(1j*temp)
     
     # Compute sorting performance 
-    sorting_performance,*_ = compute_sorting_performance(phase_maps)
+    sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     
     return sorting_performance
 
 def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = np.exp(1j*temp)
@@ -323,8 +458,15 @@ def fitness_func_crosstalk(ga_instance, solution, solution_idx):
 
 def fitness_func_secretKey(ga_instance, solution, solution_idx):
     
+    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
+        rotation_angle = np.random.uniform(0, 2*np.pi)
+    elif (fixedRotation):
+        rotation_angle = rot_angle
     # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    
+    # NEW: apply rotation onto the incident field
+    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
@@ -334,7 +476,7 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
         phase_maps[ii] = np.exp(1j*temp)
     
     # Compute sorting performance 
-    sorting_performance, _, secret_key = compute_sorting_performance(phase_maps)
+    sorting_performance, _, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     
     sorting_performance_neo = sorting_performance*secret_key
     
@@ -342,9 +484,18 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
 
 
 def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex_)
 
+    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
+        rotation_angle = np.random.uniform(0, 2*np.pi)
+    elif (fixedRotation):
+        rotation_angle = rot_angle
+    
+    # Create the phase map(s) by reshaping the solution array
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    
+    # NEW: apply rotation onto the incident field
+    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
+    
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
         temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
@@ -353,18 +504,15 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
         phase_maps[ii] = np.exp(1j*temp)
     
     # Compute sorting performance 
-    sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps)
+    sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     
     sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
     
     return sorting_performance_neo 
     
-
-
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are
 # k determines how peaked is the p-dist. 
-
 
 def exp_rank_selection(fitness, num_parents, ga_instance):
     
@@ -397,7 +545,6 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
     return parents, np.array(parents_indices)
 
 
-
 # In principle, we would save the last population of the previous GA instance, then rerun a second GA using this population as the starting one 
 
 def on_stop(ga_instance, last_population_fitness):
@@ -405,8 +552,6 @@ def on_stop(ga_instance, last_population_fitness):
     global last_pop 
     last_pop = ga_instance.population 
     
-
-
 
 # We begin by optimizing just the sorting performance for the first start_gen generations
 
@@ -426,7 +571,6 @@ ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
                        on_stop = on_stop)
-
 
 
 # We then start another GA instance w/ the last population where we start to optimize together the sorting performance and the determinant. 
@@ -454,7 +598,6 @@ ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
 
 
 ga_instance_crosstalk.run()
-
 
 
 '''

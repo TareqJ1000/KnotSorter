@@ -19,6 +19,9 @@ um = 1e-6
 mm = 1e-3
 cm = 1e-2
 
+# Optical Functions
+
+
 '''
 This propagates the beam using a Fresnal Diffraction Transfer Function approach. 
 
@@ -43,12 +46,14 @@ def propTF(u1,L,la,z):
     
     return u2 
 
+
 '''
 This function implements the Fraufoner Diffraction Transfer Approach instead. Translation from Voelz
 u1 - source field
 L1 - full observation side length 
 la - wavelength 
 z - prop distance
+
 
 returns: 
 u2 - observation field at z
@@ -153,6 +158,7 @@ def TotInt(Ex, phase=True):
         plt.show()
     
     
+    
 '''
 Cartesian to Polar coordinates 
 x,y - x and y coordinates
@@ -196,7 +202,7 @@ def output_chan(X, Y, rad_spot, maxx, num_of_spots):
         spot_loc_x.append(np.random.uniform(-maxx+rad_spot,maxx-rad_spot))
         spot_loc_y.append(np.random.uniform(-maxx+rad_spot,maxx-rad_spot))
     
-    fields = np.empty((num_of_spots, N, N), dtype=np.complex64)
+    fields = np.empty((num_of_spots, N, N), dtype=np.complex128)
     # Space definition 
     for ii in range(num_of_spots):
         X=np.linspace(-maxx,maxx,N) + spot_loc_x[ii]
@@ -210,14 +216,12 @@ def output_chan(X, Y, rad_spot, maxx, num_of_spots):
     return fields  # In principle, it suffices to return fields. 
 
 
-
 # Function that outputs channels at more predefined, symmetric points
 
 def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
     N = len(X)
     spot_loc_x = []
     spot_loc_y = []
-
     
     for ii in range(int(num_of_spots/2)):
         
@@ -227,7 +231,7 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
             
             spot_loc_x.append(-(ii+1)*chan_sep*mm)
             spot_loc_y.append(0)
-        
+    
     fields = np.empty((num_of_spots, N, N))
     # Space definition 
     for ii in range(num_of_spots):
@@ -241,6 +245,43 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
     
     return fields # In principle, it suffices to return fields. 
 
+# This creates a specific triangle-like configuration for the symmetric sorting of three modes
+
+def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
+    
+    # The y-offset is set so that we form an equilbrium triangle 
+    
+    y_offset = (np.sqrt(3)*(chan_sep*mm))/2
+    
+    N = len(X)
+    spot_loc_x = []
+    spot_loc_y = []
+
+    # First two symmetric spots
+    spot_loc_x.append(chan_sep * mm)
+    spot_loc_y.append(0)
+
+    spot_loc_x.append(-chan_sep * mm)
+    spot_loc_y.append(0)
+
+    # Third spot centered horizontally, shifted down vertically
+    spot_loc_x.append(0)
+    spot_loc_y.append(-y_offset)
+
+    num_of_spots = 3  # Explicitly define since we're overriding symmetry
+    fields = np.empty((num_of_spots, N, N))
+
+    # Generate spots
+    for ii in range(num_of_spots):
+        X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
+        Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
+        h = np.abs(X_shifted[1] - X_shifted[2])
+        xx, yy = np.meshgrid(X_shifted, Y_shifted)
+        r, phi = cart2pol(xx, yy)
+
+        fields[ii] = pupil_function(r, rad_spot)
+
+    return fields
 
 '''
 Generates knots
@@ -255,6 +296,7 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
     
     rs = rr/w0 # dimensionless, scaled beam coordinate
     a,b,kk = shapeParams
+    i = 1j
     
     if (knotType == 'Trefoil'): # Input beam profile (Trefoil)
         AK=np.exp(-(rs/(np.sqrt(2)*kk))**2)*(1 - rs**2 - 4 * (a**2 - b**2) * rs**3 - rs**4 + rs**6 - 2 *(a - b)**2 * (rs*np.exp(-1j*phi))**3 - 2 *(a + b)**2 * (rs*np.exp(1j*phi))**3)
@@ -264,11 +306,42 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams):
 
     if (knotType == 'Cinquefoil'): # Input beam profile (Cinquefoil)
         AK = np.exp(-(rs/(np.sqrt(2)*kk))**2) * (1 + rs**2 - 2*rs**4 - 16*(a**2 - b**2)*rs**5 - 2*rs**6 + rs**8 + rs**10 - (8*((a-b)**2)*(rs**5)*np.exp(-1j*5*(phi))) - (8*((a+b)**2)*(rs**5)*np.exp(1j*5*(phi))))
-   
+        
+    if (knotType == 'Figure-8'): # Input beam profile (Figure-8)
+    
+        AK = result = (
+        (8 * a**3 * rs**6 * np.exp(-2 * i * phi)) +
+        (8 * a**3 * rs**6 * np.exp(2 * i * phi)) +
+        (16 * a**3 * rs**4 * np.exp(-2 * i * phi)) +
+        (16 * a**3 * rs**4 * np.exp(2 * i * phi)) +
+        (8 * a**3 * rs**2 * np.exp(-2 * i * phi)) +
+        (8 * a**3 * rs**2 * np.exp(2 * i * phi)) +
+        (12 * a**2 * rs**8) +
+        (24 * a**2 * rs**6) -
+        (24 * a**2 * rs**2) -
+        (12 * a**2) +
+        (6 * a * b**2 * rs**6 * np.exp(-2 * i * phi)) +
+        (6 * a * b**2 * rs**6 * np.exp(2 * i * phi)) +
+        (12 * a * b**2 * rs**4 * np.exp(-2 * i * phi)) +
+        (12 * a * b**2 * rs**4 * np.exp(2 * i * phi)) +
+        (24 * a * b * rs**2 * np.exp(-2 * i * phi)) -
+        (24 * a * b * rs**2 * np.exp(2 * i * phi)) -
+        (4 * b**3 * rs**4 * np.exp(-4 * i * phi)) +
+        (4 * b**3 * rs**4 * np.exp(4 * i * phi)) -
+        (3 * b**2 * rs**8) -
+        (6 * b**2 * rs**6) +
+        (6 * b**2 * rs**2) +
+        (3 * b**2) -
+        (16 * rs**8) +
+        (32 * rs**6) -
+        (32 * rs**2) +
+        16)*np.exp(-(rs/(np.sqrt(2)*kk))**2) 
+    
     return AK
 
 
 # This function generates phase gratings in reminisce of OAM gratings 
+
 
 def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
     
@@ -296,11 +369,7 @@ def OAMWithGratings(l,rows,cols,xoffset,yoffset,a):
 # This is a simple routine that applies normalization to the field, given also the numerical step size. 
 
 def norm_field(field,h):
-    norm_fac=np.sqrt(np.sum(np.abs(field)**2*h**2))
-    # To check, what do we observe when we compute the norm of our field? 
-    norm_check = np.sum(np.abs(field/norm_fac)**2*h**2)
-    # This should give us 1
-    print(norm_check)
+    norm_fac=np.sqrt(np.sum(np.abs(field*h)**2))
     return field/norm_fac 
 
 
@@ -308,7 +377,6 @@ def norm_field(field,h):
 
 def shannon_entropy(x,d):
     return (-x*np.log2(x/(d-1)) - (1-x)*np.log2(1-x))
-
 
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 
