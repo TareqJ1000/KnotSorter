@@ -38,7 +38,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 0
+shift = 1
 
 # *** OMIT IN CLUSTER
 
@@ -337,16 +337,15 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
             else: # Compute the field at the front focal plane of the lens
                  field_lens = fftshift(fft2(field_mod_1))
         
+            # What happens next depends on whether we have one or two phase maps
         
-        # What happens next depends on whether we have one or two phase maps
+            if (num_phase_maps_far==0):
+                # Compute the field intensity 
+                final_field = field_lens
         
-        if (num_phase_maps_far==0):
-            # Compute the field intensity 
-            final_field = field_lens
-        
-        else:
-            # Modulate the field by the first far field map
-            field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
+            else:
+                # Modulate the field by the first far field map
+                 field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
 
             if (multiPhaseLens):
                 field_after_2 = field_mod_2
@@ -470,7 +469,7 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
 
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = np.exp(1j*temp)
@@ -498,7 +497,7 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
     
     for ii in range(num_of_phase_maps):
         # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = np.exp(1j*temp)
@@ -552,6 +551,65 @@ def on_stop(ga_instance, last_population_fitness):
     global last_pop 
     last_pop = ga_instance.population 
     
+
+print("Beginning optimization...") 
+
+# Print experiment configuration details
+print("\n" + "="*80)
+print("EXPERIMENT CONFIGURATION")
+print("="*80)
+
+# Determine experiment type
+if multiPhaseLens:
+    experiment_type = "Multi-Phase Experiment WITH Lenses"
+    print(f"Experiment Type: {experiment_type}")
+    print(f"  - Number of phase screens in near field: {num_phase_maps_near}")
+    print(f"  - Number of phase screens in far field: {num_phase_maps_far}")
+    print(f"  - Distance between phase screens (z_o): {z_o/cm:.2f} cm")
+    print(f"  - Fourier lens length: {fourier_lens/cm:.2f} cm")
+elif multiPhase:
+    experiment_type = "Multi-Phase Experiment (No Lenses)"
+    print(f"Experiment Type: {experiment_type}")
+    print(f"  - Number of phase screens: {num_of_phase_maps}")
+    print(f"  - Distance between phase screens (z_o): {z_o/cm:.2f} cm")
+elif simulateLens:
+    experiment_type = "Lens Experiment (Simulated Fraunhofer Diffraction)"
+    print(f"Experiment Type: {experiment_type}")
+    print(f"  - Number of phase screens: {num_of_phase_maps}")
+    print(f"  - Fourier lens length: {fourier_lens/cm:.2f} cm")
+else:
+    experiment_type = "Standard Lens Experiment (Fourier Transform)"
+    print(f"Experiment Type: {experiment_type}")
+    print(f"  - Number of phase screens: {num_of_phase_maps}")
+
+print(f"\nTotal Phase Screens Being Optimized: {num_of_phase_maps}")
+print(f"  - Total genes in solution: {num_genes} ({num_of_phase_maps} × {N}²)")
+
+# Print knot/mode parameters being sorted
+print(f"\nModes Being Sorted:")
+if isKnot:
+    print(f"  - Type: Knotted Beams")
+    print(f"  - Number of knots: {len(knotType)}")
+    for idx, (knot, params) in enumerate(zip(knotType, shapeParams)):
+        print(f"    [{idx+1}] Knot Type: {knot}, Shape Parameters: {params}")
+else:
+    print(f"  - Type: Laguerre-Gaussian (LG) Modes")
+    print(f"  - Number of modes: {len(LG_modes)}")
+    for idx, mode in enumerate(LG_modes):
+        print(f"    [{idx+1}] LG Mode: (l={mode[0]}, p={mode[1]})")
+
+print(f"  - Beam waist (w0): {w0/mm:.2f} mm")
+print(f"  - Number of output channels: {num_of_output_chans}")
+
+# Print rotation settings if applicable
+if randomRotation:
+    print(f"\nRotation: Random (0 to 2π)")
+elif fixedRotation:
+    print(f"\nRotation: Fixed angle = {rot_angle} rad")
+else:
+    print(f"\nRotation: None")
+
+print("="*80 + "\n")
 
 # We begin by optimizing just the sorting performance for the first start_gen generations
 
