@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 11, in <module>
+    import pygad
+ModuleNotFoundError: No module named 'pygad'
+srun: error: nc10309: task 0: Exited with exit code 1

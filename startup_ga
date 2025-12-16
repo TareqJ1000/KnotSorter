@@ -1,0 +1,21 @@
+#!/bin/bash -l
+#SBATCH --array=3
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+# Standard output and error:
+#SBATCH -o ./jobsOut/out.%j
+#SBATCH -e ./jobsErr/err.%j
+#SBATCH -D ./
+#SBATCH -J ga_cpu
+
+#srun ./script $SLURM_ARRAY_TASK_ID 
+
+# memory
+#SBATCH --mem=16GB
+#SBATCH --time=72:00:00
+
+module load python scipy-stack
+source venv/bin/activate
+
+srun python run_ga.py --ii $SLURM_ARRAY_TASK_ID

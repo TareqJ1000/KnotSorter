@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 import os
 
 # physical constants
+
 cm = 1e-2
 mm = 1e-3
 um = 1e-6 
@@ -345,27 +346,26 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         
             else:
                 # Modulate the field by the first far field map
-                 field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
+                field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
+                if (multiPhaseLens):
+                    field_after_2 = field_mod_2
+                    for jj in range(1+num_phase_maps_near, num_of_phase_maps):
 
-            if (multiPhaseLens):
-                field_after_2 = field_mod_2
-                for jj in range(1+num_phase_maps_near, num_of_phase_maps):
-
-                    # Propagate the beam 
-                    field_after_2 = propTF(field_after_2, maxx, la, z_o)
-                    # Apply phase to beam 
-                    field_after_2 = field_after_2*phase_maps[jj]
+                        # Propagate the beam 
+                        field_after_2 = propTF(field_after_2, maxx, la, z_o)
+                        # Apply phase to beam 
+                        field_after_2 = field_after_2*phase_maps[jj]
             
-                # Apply inverse fourier transform onto beam
-                field_lens_2 = ifft2(ifftshift(field_after_2))
+                 # Apply inverse fourier transform onto beam
+                    field_lens_2 = ifft2(ifftshift(field_after_2))
 
-            # simulate the lens field again. This is the final field. 
-            elif (simulateLens):
-                field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
-            else: 
-                field_lens_2 = ifft2(ifftshift(field_mod_2))
+                 # simulate the lens field again. This is the final field. 
+                elif (simulateLens):
+                    field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
+                else: 
+                    field_lens_2 = ifft2(ifftshift(field_mod_2))
 
-            final_field = field_lens_2
+                final_field = field_lens_2
         
         # We normalize the final field and compute the intensity 
         final_field = norm_field(final_field,h)

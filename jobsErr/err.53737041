@@ -1,0 +1,50 @@
+cannot access local variable 'field_mod_2' where it is not associated with a value
+Traceback (most recent call last):
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1559, in cal_pop_fitness
+    fitness = self.fitness_func(self, sol, sol_idx)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 435, in fitness_func_sorting
+    sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 367, in compute_sorting_performance
+    field_lens_2 = ifft2(ifftshift(field_mod_2))
+                                   ^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'field_mod_2' where it is not associated with a value
+cannot access local variable 'field_mod_2' where it is not associated with a value
+Traceback (most recent call last):
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1765, in run
+    self.last_generation_fitness = self.cal_pop_fitness()
+                                   ^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1722, in cal_pop_fitness
+    raise ex
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1559, in cal_pop_fitness
+    fitness = self.fitness_func(self, sol, sol_idx)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 435, in fitness_func_sorting
+    sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 367, in compute_sorting_performance
+    field_lens_2 = ifft2(ifftshift(field_mod_2))
+                                   ^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'field_mod_2' where it is not associated with a value
+Traceback (most recent call last):
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 637, in <module>
+    ga_instance_sorting.run()
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1933, in run
+    raise ex
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1765, in run
+    self.last_generation_fitness = self.cal_pop_fitness()
+                                   ^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1722, in cal_pop_fitness
+    raise ex
+  File "/lustre06/project/6063356/tareqj/KnotSorter/venv/lib/python3.11/site-packages/pygad/pygad.py", line 1559, in cal_pop_fitness
+    fitness = self.fitness_func(self, sol, sol_idx)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 435, in fitness_func_sorting
+    sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
+                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 367, in compute_sorting_performance
+    field_lens_2 = ifft2(ifftshift(field_mod_2))
+                                   ^^^^^^^^^^^
+UnboundLocalError: cannot access local variable 'field_mod_2' where it is not associated with a value
+srun: error: nc10924: task 0: Exited with exit code 1

@@ -1,0 +1,22 @@
+Beginning optimization...
+
+================================================================================
+EXPERIMENT CONFIGURATION
+================================================================================
+Experiment Type: Standard Lens Experiment (Fourier Transform)
+  - Number of phase screens: 1
+
+Total Phase Screens Being Optimized: 1
+  - Total genes in solution: 16384 (1 × 128²)
+
+Modes Being Sorted:
+  - Type: Knotted Beams
+  - Number of knots: 2
+    [1] Knot Type: Trefoil, Shape Parameters: [1, 1, 1.2]
+    [2] Knot Type: Cinquefoil, Shape Parameters: [1.4, 1.4, 1.2]
+  - Beam waist (w0): 0.10 mm
+  - Number of output channels: 2
+
+Rotation: Fixed angle = 0 rad
+================================================================================
+
