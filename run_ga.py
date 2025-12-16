@@ -38,7 +38,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 1
+# shift = 1
 
 # *** OMIT IN CLUSTER
 
@@ -657,86 +657,6 @@ ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
 
 ga_instance_crosstalk.run()
 
-
-'''
-
-DEPRECIATED FUNCTUIONS
-
-Here, we create an initial population in reminisce of actual OAM holograms
-
-def initialize_population(sol_per_pop, N, num_phase_maps):
-    # Start with empty array to hold our starting maps
-    
-    init_pop = np.empty((sol_per_pop, num_phase_maps*N**2))
-    
-    for ii in range(sol_per_pop):
-        for jj in range(num_phase_maps):
-        
-            # Stochastic Generator
-            oamMode = np.random.randint(-2,2)
-            a = [np.random.uniform(0.0,1.0) for ii in range(4)]
-            x_offset = np.random.uniform(low=0.0, high=1.0)
-            y_offset = np.random.uniform(low=0.0, high=1.0)
-            
-            # We may apply a random, normally distributed map w/ gaussian mean 
-            gauss_mean = np.random.normal(0,0.1,(N,N))
-            
-            final_field = OAMWithGratings(oamMode,N,N,x_offset, y_offset, a) + gauss_mean
-            
-            init_pop[ii,(jj)*N**2:(jj+1)*N**2] = final_field.flatten()
-    return init_pop
-
-
-def initialize_population_blazed(sol_per_pop, N, sigma, num_phase_maps, isKnot):
-    # Start with empty array to hold our starting maps
-    
-    init_pop = np.empty((sol_per_pop,num_phase_maps, N, N))
-    
-    for ii in range(sol_per_pop):
-        for jj in range(num_phase_maps):
-        
-            # Stochastic Generator
-            # Filp a coin
-            coinfilp = np.random.randint(0,2)
-            
-            if(isKnot == False):
-                oamMode = np.random.randint(-2,3)
-                LA = la*(1/np.random.uniform(0,1))
-                initial_field = LG(r, phi, oamMode, 0, w0, h, 0, k)
-            else:
-                # Filp another coin to determine trefoil or cinquefoil 
-                coinfilp_2 = np.random.randint(0,2)
-                if (coinfilp_2 == 0):
-                    knotType='Trefoil'
-                else:
-                    knotType='Cinquefoil'
-                a = np.random.uniform(0,1)
-                b = np.random.uniform(0,1)
-                s = 1.2
-                initial_field = setKnotType(r, phi, w0, knotType, shapeParams) 
-
-            initial_field = initial_field/np.max(np.abs(initial_field))
-            LA = la*(1/np.random.uniform(0,1))
-    
-            # Stepsize in the x and y directions are randomized. This also applies stochasticsity on the generated maps
-        
-            hx = np.random.uniform(1e-3*h, h)
-            hy = np.random.uniform(1e-3*h, h)
-
-            # We may apply a random, normally distributed map w/ gaussian mean 
-            gauss_mean = np.random.normal(0,0.1,(N,N))
-            final_field = wrap_to_domain(Hologram(initial_field, hx, hy, LA))
-            
-            final_field += gauss_mean
-            
-            # Apply a gaussian filter, too
-            final_field = sp.ndimage.gaussian_filter(final_field, sigma=sigma)
-            final_field =  np.pi*(np.tanh(final_field))
-            init_pop[ii,jj] = final_field
-        
-    return init_pop
-
-'''
 
 
 
