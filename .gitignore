@@ -2,3 +2,5 @@ venv
 .ipynb_checkpoints
 __pycache__
 plots
+genetic_instances
+best_phases
