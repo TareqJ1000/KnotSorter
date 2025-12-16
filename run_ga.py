@@ -322,7 +322,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
             if (multiPhaseLens): # Multi-phase experiment with the lens
                 field_after = field_mod_1
 
-                for ii in range(1, 1+num_phase_maps_near):
+                for ii in range(1, num_phase_maps_near):
                     # Propagate the beam by a distance z_o 
                     field_after = propTF(field_after, maxx, la, z_o)
                     # Apply the next phase map in the near field (if applicable)
@@ -349,8 +349,8 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
                 field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
                 if (multiPhaseLens):
                     field_after_2 = field_mod_2
+                    
                     for jj in range(1+num_phase_maps_near, num_of_phase_maps):
-
                         # Propagate the beam 
                         field_after_2 = propTF(field_after_2, maxx, la, z_o)
                         # Apply phase to beam 
