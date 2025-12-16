@@ -21,7 +21,6 @@ cm = 1e-2
 
 # Optical Functions
 
-
 '''
 This propagates the beam using a Fresnal Diffraction Transfer Function approach. 
 
@@ -88,6 +87,7 @@ def propFF(u1, L1, la, z, isInverse = False):
         u2 = c*ifftshift(fft2(fftshift(u1)))*dx1**2
     
     return u2, L2
+
 
 
 
@@ -417,6 +417,8 @@ def wrap_to_domain(field):
                 field[ii,jj] -= 2*np.pi
                 
     return field
+
+
 
 
 
