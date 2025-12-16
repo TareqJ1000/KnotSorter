@@ -1,5 +1,0 @@
-  File "/lustre06/project/6063356/tareqj/KnotSorter/run_ga.py", line 351
-    if (multiPhaseLens):
-                        ^
-IndentationError: unindent does not match any outer indentation level
-srun: error: nc10309: task 0: Exited with exit code 1
