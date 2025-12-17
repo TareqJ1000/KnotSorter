@@ -36,9 +36,11 @@ mutation_prob: (0.10,0.01)
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 1.0
-ga_instance: "tref_cinq_lens_two_prev"
+ga_instance: "tref_cinq_lens_two"
 
 # Do we generate knots instead? 
 isKnot: True
 knotType: ['Trefoil', 'Cinquefoil']
-shapeParams: [[1,1,1.2],[2.5,2.5,1.6]]
+shapeParams: [[1,1,1.2],[1.4,1.4,1.2]]
+
+
