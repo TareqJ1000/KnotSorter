@@ -390,7 +390,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         sorting_performance += correct_chans - incorrect_chans
         
         # Compute the detector effeciency 
-        detect_eff = correct_chans/int_knot 
+        detect_eff = correct_chans 
         crosstalk_matrix[ii,ii] = detect_eff 
         
         # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
