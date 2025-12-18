@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 import plotly
 import plotly.graph_objs as go
 
-
 # CONSTANTS 
+
 um = 1e-6 
 mm = 1e-3
 nm = 1e-9
