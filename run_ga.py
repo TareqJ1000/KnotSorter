@@ -39,7 +39,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-# shift = 1
+ #shift = 1
 
 # *** OMIT IN CLUSTER
 
@@ -236,7 +236,7 @@ def on_gen(ga_instance):
     
     for ii in range(num_of_phase_maps):
         # Reshape and apply filter to solutions 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = temp
@@ -368,6 +368,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
                 final_field = field_lens_2
         
         # We normalize the final field and compute the intensity 
+        
         final_field = norm_field(final_field,h)
         final_field_int = np.abs(final_field)**2
         
@@ -390,7 +391,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         sorting_performance += correct_chans - incorrect_chans
         
         # Compute the detector effeciency 
-        detect_eff = correct_chans 
+        detect_eff = correct_chans/int_knot 
         crosstalk_matrix[ii,ii] = detect_eff 
         
         # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
@@ -407,6 +408,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         
     return ((1/d)*sorting_performance), crosstalk_matrix, secret_key
     
+
 '''
 This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
 '''
@@ -637,7 +639,7 @@ ga_instance_sorting.run()
 
 ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func_secretKey,
+                       fitness_func=fitness_func_secretKey_crosstalk,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,
