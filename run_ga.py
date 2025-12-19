@@ -306,12 +306,12 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         if (multiPhase): # Propagate the field by a distance z_o and apply the second phase screen
             field_after = field_mod_1
 
-            for ii in range(1, len(phase_maps)):
+            for jj in range(1, len(phase_maps)):
                 # Propagate the beam by a distance z_o
                 field_after = propTF(field_after, maxx, la, z_o)
 
                 # Apply the next phase map (if applicable)
-                field_after = field_after*phase_maps[ii]
+                field_after = field_after*phase_maps[jj]
 
             # Propagate the beam one final time and observe the final field
 
@@ -322,11 +322,11 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
             if (multiPhaseLens): # Multi-phase experiment with the lens
                 field_after = field_mod_1
 
-                for ii in range(1, num_phase_maps_near):
+                for kk in range(1, num_phase_maps_near):
                     # Propagate the beam by a distance z_o 
                     field_after = propTF(field_after, maxx, la, z_o)
                     # Apply the next phase map in the near field (if applicable)
-                    field_after = field_after*phase_maps[ii]
+                    field_after = field_after*phase_maps[kk]
                 
                 # Fourier transform the beam into the far field
                 field_lens = fftshift(fft2(field_after))
@@ -350,11 +350,11 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
                 if (multiPhaseLens):
                     field_after_2 = field_mod_2
                     
-                    for jj in range(1+num_phase_maps_near, num_of_phase_maps):
+                    for ll in range(1+num_phase_maps_near, num_of_phase_maps):
                         # Propagate the beam 
                         field_after_2 = propTF(field_after_2, maxx, la, z_o)
                         # Apply phase to beam 
-                        field_after_2 = field_after_2*phase_maps[jj]
+                        field_after_2 = field_after_2*phase_maps[ll]
             
                  # Apply inverse fourier transform onto beam
                     field_lens_2 = ifft2(ifftshift(field_after_2))
@@ -395,8 +395,8 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         
         # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
         
-        for jj, ind in enumerate(temp_index):
-            crosstalk_eff = incorrect_chan_ints[jj]
+        for mm, ind in enumerate(temp_index):
+            crosstalk_eff = incorrect_chan_ints[mm]
             crosstalk_matrix[ii, ind] = crosstalk_eff
 
     # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
@@ -518,31 +518,39 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
     fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
     fitness_sorted.reverse()
 
-    parents_sorted = np.empty((num_parents, ga_instance.population.shape[1]))
-
     # Create ranks 
     ranks = np.arange(1, ga_instance.sol_per_pop+1)
 
-    # Now, compute the probabilities according to exponential selection routine
-    probs = parent_c*(1 - np.exp(-ranks/parent_k))
+    # Compute probabilities according to exponential selection routine
+    probs = parent_c * (1 - np.exp(-ranks/parent_k))
     
-    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(probs=probs.copy(), 
-                                                              num_parents=num_parents)
+    # **CRITICAL: Normalize probabilities to sum to 1**
+    probs = probs / np.sum(probs)
+    
+    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(
+        probs=probs.copy(), 
+        num_parents=num_parents
+    )
     parents_indices = []
 
     for parent_num in range(num_parents):
         rand_prob = np.random.rand()
+        selected = False
         for idx in range(probs.shape[0]):
             if (rand_prob >= probs_start[idx] and rand_prob < probs_end[idx]):
-            # The variable idx has the rank of solution but not its index in the population.
-            # Return the correct index of the solution.
                 mapped_idx = fitness_sorted[idx]
                 parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
                 parents_indices.append(mapped_idx)
+                selected = True
                 break
+        
+        # **Safety check: if no bin selected, choose best individual**
+        if not selected:
+            mapped_idx = fitness_sorted[0]
+            parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
+            parents_indices.append(mapped_idx)
                 
     return parents, np.array(parents_indices)
-
 
 # In principle, we would save the last population of the previous GA instance, then rerun a second GA using this population as the starting one 
 
