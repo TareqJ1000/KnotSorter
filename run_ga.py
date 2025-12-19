@@ -39,7 +39,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
- #shift = 1
+shift = 0
 
 # *** OMIT IN CLUSTER
 
@@ -306,12 +306,12 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         if (multiPhase): # Propagate the field by a distance z_o and apply the second phase screen
             field_after = field_mod_1
 
-            for ii in range(1, len(phase_maps)):
+            for jj in range(1, len(phase_maps)):
                 # Propagate the beam by a distance z_o
                 field_after = propTF(field_after, maxx, la, z_o)
 
                 # Apply the next phase map (if applicable)
-                field_after = field_after*phase_maps[ii]
+                field_after = field_after*phase_maps[jj]
 
             # Propagate the beam one final time and observe the final field
 
@@ -322,11 +322,11 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
             if (multiPhaseLens): # Multi-phase experiment with the lens
                 field_after = field_mod_1
 
-                for ii in range(1, num_phase_maps_near):
+                for kk in range(1, num_phase_maps_near):
                     # Propagate the beam by a distance z_o 
                     field_after = propTF(field_after, maxx, la, z_o)
                     # Apply the next phase map in the near field (if applicable)
-                    field_after = field_after*phase_maps[ii]
+                    field_after = field_after*phase_maps[kk]
                 
                 # Fourier transform the beam into the far field
                 field_lens = fftshift(fft2(field_after))
@@ -350,11 +350,11 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
                 if (multiPhaseLens):
                     field_after_2 = field_mod_2
                     
-                    for jj in range(1+num_phase_maps_near, num_of_phase_maps):
+                    for ll in range(1+num_phase_maps_near, num_of_phase_maps):
                         # Propagate the beam 
                         field_after_2 = propTF(field_after_2, maxx, la, z_o)
                         # Apply phase to beam 
-                        field_after_2 = field_after_2*phase_maps[jj]
+                        field_after_2 = field_after_2*phase_maps[ll]
             
                  # Apply inverse fourier transform onto beam
                     field_lens_2 = ifft2(ifftshift(field_after_2))

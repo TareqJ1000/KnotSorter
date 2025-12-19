@@ -9,7 +9,7 @@ channel_sep: 1.5
 
 # Experimental Parameters of the Setup
 num_phase_maps_near: 1
-num_phase_maps_far: 2
+num_phase_maps_far: 1
 
 rot_angle: '0' # Rotates the incident field by rot_angle 
 fixedRotation: True 
@@ -21,8 +21,8 @@ fourier_length: 10 # in cm
 
 # Simulates the experiment with multiple phase screens 
 multiPhaseLens: False
-multiPhase: True
-z_o: 30 # in cm
+multiPhase: False
+z_o: 20 # in cm
 
 # Genetic Parameters
 num_of_gens: 4.e5
@@ -36,9 +36,11 @@ mutation_prob: (0.10,0.01)
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 1.0
-ga_instance: "multiphase_30z0"
+ga_instance: "tref_cinq_lens_two"
 
 # Do we generate knots instead? 
 isKnot: True
 knotType: ['Trefoil', 'Cinquefoil']
 shapeParams: [[1,1,1.2],[1.4,1.4,1.2]]
+
+
