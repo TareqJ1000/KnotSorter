@@ -519,14 +519,16 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
     
     fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
     fitness_sorted.reverse()
-
-    parents_sorted = np.empty((num_parents, ga_instance.population.shape[1]))
-
+    
     # Create ranks 
     ranks = np.arange(1, ga_instance.sol_per_pop+1)
 
     # Now, compute the probabilities according to exponential selection routine
     probs = parent_c*(1 - np.exp(-ranks/parent_k))
+
+    # Make sure that this is being normalized! 
+
+    probs = probs/np.sum(probs)
     
     probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(probs=probs.copy(), 
                                                               num_parents=num_parents)
