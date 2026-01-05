@@ -39,7 +39,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 0
+# shift = 0
 
 # *** OMIT IN CLUSTER
 
@@ -391,7 +391,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         sorting_performance += correct_chans - incorrect_chans
         
         # Compute the detector effeciency 
-        detect_eff = correct_chans/int_knot 
+        detect_eff = correct_chans 
         crosstalk_matrix[ii,ii] = detect_eff 
         
         # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
@@ -519,31 +519,38 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
     
     fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
     fitness_sorted.reverse()
-    
+
     # Create ranks 
     ranks = np.arange(1, ga_instance.sol_per_pop+1)
 
-    # Now, compute the probabilities according to exponential selection routine
-    probs = parent_c*(1 - np.exp(-ranks/parent_k))
-
-    # Make sure that this is being normalized! 
-
-    probs = probs/np.sum(probs)
+    # Compute probabilities according to exponential selection routine
+    probs = parent_c * (1 - np.exp(-ranks/parent_k))
     
-    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(probs=probs.copy(), 
-                                                              num_parents=num_parents)
+    # **CRITICAL: Normalize probabilities to sum to 1**
+    probs = probs / np.sum(probs)
+    
+    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(
+        probs=probs.copy(), 
+        num_parents=num_parents
+    )
     parents_indices = []
 
     for parent_num in range(num_parents):
         rand_prob = np.random.rand()
+        selected = False
         for idx in range(probs.shape[0]):
             if (rand_prob >= probs_start[idx] and rand_prob < probs_end[idx]):
-            # The variable idx has the rank of solution but not its index in the population.
-            # Return the correct index of the solution.
                 mapped_idx = fitness_sorted[idx]
                 parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
                 parents_indices.append(mapped_idx)
+                selected = True
                 break
+        
+        # **Safety check: if no bin selected, choose best individual**
+        if not selected:
+            mapped_idx = fitness_sorted[0]
+            parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
+            parents_indices.append(mapped_idx)
                 
     return parents, np.array(parents_indices)
 
