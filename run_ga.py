@@ -648,7 +648,7 @@ ga_instance_sorting.run()
 
 ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func_secretKey_crosstalk,
+                       fitness_func=fitness_func_secretKey,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,

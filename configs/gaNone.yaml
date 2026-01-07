@@ -9,7 +9,7 @@ channel_sep: 1.5
 
 # Experimental Parameters of the Setup
 num_phase_maps_near: 1
-num_phase_maps_far: 2
+num_phase_maps_far: 0
 
 rot_angle: '0' # Rotates the incident field by rot_angle 
 fixedRotation: True 
@@ -21,7 +21,7 @@ fourier_length: 10 # in cm
 
 # Simulates the experiment with multiple phase screens 
 multiPhaseLens: False
-multiPhase: True
+multiPhase: False
 z_o: 30 # in cm
 
 # Genetic Parameters

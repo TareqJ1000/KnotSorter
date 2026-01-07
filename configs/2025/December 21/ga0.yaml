@@ -8,8 +8,8 @@ gauss_filter_sigma: 1000
 channel_sep: 1.5
 
 # Experimental Parameters of the Setup
-num_phase_maps_near: 3
-num_phase_maps_far: 0
+num_phase_maps_near: 1
+num_phase_maps_far: 1
 
 rot_angle: '0' # Rotates the incident field by rot_angle 
 fixedRotation: True 
@@ -21,11 +21,11 @@ fourier_length: 10 # in cm
 
 # Simulates the experiment with multiple phase screens 
 multiPhaseLens: False
-multiPhase: True
-z_o: 10 # in cm
+multiPhase: False
+z_o: 20 # in cm
 
 # Genetic Parameters
-num_of_gens: 1.e5
+num_of_gens: 4.e5
 gen_start: 1.e4
 parents_mating: 2
 sol_per_pop: 10
@@ -36,7 +36,7 @@ mutation_prob: (0.10,0.01)
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 1.0
-ga_instance: "tref_cinque_3phaselens_10cm"
+ga_instance: "tref_cinq_lens_two"
 
 # Do we generate knots instead? 
 isKnot: True
