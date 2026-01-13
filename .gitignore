@@ -9,3 +9,5 @@ jobsErr
 jobsOut
 *.gif
 *.png
+oldenv
+*.html 

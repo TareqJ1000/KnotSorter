@@ -207,6 +207,47 @@ def Singular(F, A, min_contour_length=10):
             Z=np.concatenate((Z,-ii*(xi*0+1)))
     return [X,Y,Z]
 
+def Singular2(F, A):
+    
+    X=[]
+    Y=[]
+    Z=[]
+    leng = len(F[0]) # Pay attention to the size of your input array here 
+    ll=np.arange(leng) 
+    xf,yf=np.meshgrid(ll,ll)
+    #JJ=np.sqrt((xf-(leng/2))**2+(yf-(leng/2))**2)>thresh
+
+    for ii in range(0,len(F)):
+        print(ii) 
+
+        # Some of the contours become jittery enough that we don't end up collecting all of the intersection points. 
+        # We apply a smoothing filter onto the contours to reduce the jittery-ness
+
+        realF = np.real(F[ii])
+        imF = np.imag(F[ii])
+
+        contour1 = plt.contour(realF,0,colors='b');
+        contour2 = plt.contour(imF,0,colors='r');
+        xi = np.array([])
+        yi = np.array([])
+        for linecol in contour1.collections:
+            for path in linecol.get_paths():
+                for linecol2 in contour2.collections:
+                    for path2 in linecol2.get_paths():
+                        xinter, yinter = find_intersections(path.vertices, path2.vertices)
+                        if (len(xinter) == len(yinter)):
+                                  xi = np.append(xi, xinter)
+                                  yi = np.append(yi, yinter)
+                        else:
+                                print(f"CRAPPY INTERSECTION DETECTED")
+        X=np.concatenate((X,xi))
+        Y=np.concatenate((Y,yi))
+        if A==True:
+            Z=np.concatenate((Z,ii*(xi*0+1)))
+        else:
+            Z=np.concatenate((Z,-ii*(xi*0+1)))
+    return [X,Y,Z]
+
 
 def find_intersections(A, B):
     #this function adapted from https://stackoverflow.com/questions/3252194/numpy-and-line-intersections#answer-9110966
@@ -275,8 +316,16 @@ def KnotPlot(Ord, zScale):
             'size': 3,
             'opacity': 0.8,})
     # Configure the layout.
-    layout = go.Layout(margin={'l': 0, 'r': 0, 'b': 0, 't': 0})
+    layout = go.Layout(
+        margin={'l': 0, 'r': 0, 'b': 0, 't': 0},
+        scene=dict(
+            xaxis=dict(showticklabels=False, title=''),
+            yaxis=dict(showticklabels=False, title=''),
+            zaxis=dict(showticklabels=False, title='')
+        ))
     data = [trace]
     plot_figure = go.Figure(data=data, layout=layout)
     # Render the plot.
     plotly.offline.iplot(plot_figure)
+    # Return figure
+    return plot_figure

@@ -20,8 +20,8 @@ simulateLens: False
 fourier_length: 10 # in cm 
 
 # Simulates the experiment with multiple phase screens 
-multiPhaseLens: False
-multiPhase: True
+multiPhaseLens: True
+multiPhase: False
 z_o: 10 # in cm
 
 # Genetic Parameters

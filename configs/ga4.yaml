@@ -25,7 +25,7 @@ multiPhase: False
 z_o: 20 # in cm
 
 # Genetic Parameters
-num_of_gens: 4.e5
+num_of_gens: 1.e5
 gen_start: 1.e4
 parents_mating: 2
 sol_per_pop: 10

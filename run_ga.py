@@ -116,12 +116,15 @@ crossover_type = "single_point"
 crossover_probability = cnfg['crossover_prob'] # We keep the solution untouched to the next gen if RNG is <= this number
 
 mutation_type = cnfg['mutation_type']
-mutation_probability = eval(cnfg['mutation_prob']) # probability of mutation (must be a tuple in (low quality, high quality))
-mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate 
-random_mutation_min_val = -np.pi
-random_mutation_max_val =  np.pi
+mutation_probability = eval(cnfg['mutation_prob']) # probability of mutation (if the mutation type is adaptive, must be a tuple in (high probability, low probability))
+# mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate. This parameter actually does nothing
+
+random_mutation_min_val = -cnfg['random_mutation_min_val']*np.pi 
+random_mutation_max_val = cnfg['random_mutation_max_val']*np.pi 
 
 gen_saturate = cnfg['gen_saturate']
+
+keep_elitism = cnfg['keep_elitism']
 
 last_pop = 0
 
@@ -566,6 +569,7 @@ def on_stop(ga_instance, last_population_fitness):
 print("Beginning optimization...") 
 
 # Print experiment configuration details
+
 print("\n" + "="*80)
 print("EXPERIMENT CONFIGURATION")
 print("="*80)
@@ -634,11 +638,11 @@ ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        parent_selection_type=exp_rank_selection,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
-                       mutation_percent_genes=mutation_percent_genes,
                        mutation_probability = mutation_probability,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
+                       keep_elitism = keep_elitism,
                        on_stop = on_stop)
 
 
@@ -657,17 +661,13 @@ ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        parent_selection_type=exp_rank_selection,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
-                       mutation_percent_genes=mutation_percent_genes,
                        mutation_probability = mutation_probability,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
+                       keep_elitism = keep_elitism,
                        stop_criteria=f"saturate_{gen_saturate}")
 
 
-
 ga_instance_crosstalk.run()
-
-
-
 
