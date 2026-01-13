@@ -39,7 +39,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-# shift = 1
+# shift = 0
 
 # *** OMIT IN CLUSTER
 
@@ -116,12 +116,15 @@ crossover_type = "single_point"
 crossover_probability = cnfg['crossover_prob'] # We keep the solution untouched to the next gen if RNG is <= this number
 
 mutation_type = cnfg['mutation_type']
-mutation_probability = eval(cnfg['mutation_prob']) # probability of mutation (must be a tuple in (low quality, high quality))
-mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate 
-random_mutation_min_val = -np.pi
-random_mutation_max_val =  np.pi
+mutation_probability = eval(cnfg['mutation_prob']) # probability of mutation (if the mutation type is adaptive, must be a tuple in (high probability, low probability))
+# mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate. This parameter actually does nothing
+
+random_mutation_min_val = -cnfg['random_mutation_min_val']*np.pi 
+random_mutation_max_val = cnfg['random_mutation_max_val']*np.pi 
 
 gen_saturate = cnfg['gen_saturate']
+
+keep_elitism = cnfg['keep_elitism']
 
 last_pop = 0
 
@@ -236,7 +239,7 @@ def on_gen(ga_instance):
     
     for ii in range(num_of_phase_maps):
         # Reshape and apply filter to solutions 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], newshape=(N,N))
+        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
         # Apply gaussian filter 
         temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
         phase_maps[ii] = temp
@@ -368,6 +371,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
                 final_field = field_lens_2
         
         # We normalize the final field and compute the intensity 
+        
         final_field = norm_field(final_field,h)
         final_field_int = np.abs(final_field)**2
         
@@ -395,8 +399,8 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         
         # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
         
-        for mm, ind in enumerate(temp_index):
-            crosstalk_eff = incorrect_chan_ints[mm]
+        for jj, ind in enumerate(temp_index):
+            crosstalk_eff = incorrect_chan_ints[jj]
             crosstalk_matrix[ii, ind] = crosstalk_eff
 
     # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
@@ -407,6 +411,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs):
         
     return ((1/d)*sorting_performance), crosstalk_matrix, secret_key
     
+
 '''
 This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
 '''
@@ -552,6 +557,7 @@ def exp_rank_selection(fitness, num_parents, ga_instance):
                 
     return parents, np.array(parents_indices)
 
+
 # In principle, we would save the last population of the previous GA instance, then rerun a second GA using this population as the starting one 
 
 def on_stop(ga_instance, last_population_fitness):
@@ -563,6 +569,7 @@ def on_stop(ga_instance, last_population_fitness):
 print("Beginning optimization...") 
 
 # Print experiment configuration details
+
 print("\n" + "="*80)
 print("EXPERIMENT CONFIGURATION")
 print("="*80)
@@ -631,11 +638,11 @@ ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        parent_selection_type=exp_rank_selection,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
-                       mutation_percent_genes=mutation_percent_genes,
                        mutation_probability = mutation_probability,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
+                       keep_elitism = keep_elitism,
                        on_stop = on_stop)
 
 
@@ -654,17 +661,13 @@ ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        parent_selection_type=exp_rank_selection,
                        crossover_type=crossover_type,
                        mutation_type=mutation_type,
-                       mutation_percent_genes=mutation_percent_genes,
                        mutation_probability = mutation_probability,
                        random_mutation_min_val = random_mutation_min_val, 
                        random_mutation_max_val = random_mutation_max_val, 
                        on_generation=on_gen, 
+                       keep_elitism = keep_elitism,
                        stop_criteria=f"saturate_{gen_saturate}")
 
 
-
 ga_instance_crosstalk.run()
-
-
-
 
