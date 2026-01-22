@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --array=0-1
+#SBATCH --array=0-6
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -13,7 +13,7 @@
 
 # memory
 #SBATCH --mem=16GB
-#SBATCH --time=72:00:00
+#SBATCH --time=120:00:00
 
 module load python scipy-stack
 source venv/bin/activate

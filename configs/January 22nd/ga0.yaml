@@ -2,14 +2,14 @@
 dim: 128
 num_output_chans: 2
 output_chan_width: 0.23 # in mm 
-LG_modes: [[3,0], [5,0]]
+LG_modes: [[0,0], [2,0]]
 w0: 0.10 # in mm
 gauss_filter_sigma: 1000
 channel_sep: 1.5
 
 # Experimental Parameters of the Setup
-num_phase_maps_near: 1
-num_phase_maps_far: 1
+num_phase_maps_near: 3
+num_phase_maps_far: 0
 
 rot_angle: '0' # Rotates the incident field by rot_angle 
 fixedRotation: True 
@@ -20,7 +20,7 @@ simulateLens: False
 fourier_length: 10 # in cm 
 
 # Simulates the experiment with multiple phase screens 
-multiPhaseLens: False
+multiPhaseLens: True
 multiPhase: False
 z_o: 30 # in cm
 
@@ -38,10 +38,10 @@ random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
-ga_instance: "LG_3_5"
+ga_instance: "3phase_30cm_new_GA"
 keep_elitism: 2 # number of best solutions to keep per generation
 
 # Do we generate knots instead? 
-isKnot: False
+isKnot: True
 knotType: ['Trefoil', 'Cinquefoil']
 shapeParams: [[1,1,1.2],[1.2,1.2,1.4]]
