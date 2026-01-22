@@ -88,9 +88,6 @@ def propFF(u1, L1, la, z, isInverse = False):
     
     return u2, L2
 
-
-
-
 # LG modes 
 
 '''

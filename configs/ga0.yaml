@@ -22,25 +22,26 @@ fourier_length: 10 # in cm
 # Simulates the experiment with multiple phase screens 
 multiPhaseLens: True
 multiPhase: False
-z_o: 20 # in cm
+z_o: 30 # in cm
 
 # Genetic Parameters
-num_of_gens: 1.e5
+num_of_gens: 4.e5
 gen_start: 1.e4
-parents_mating: 2
-sol_per_pop: 10
+parents_mating: 4
+sol_per_pop: 20
 crossover_prob: None
 mutation_type: 'adaptive'
 mutation_percent: 15
-mutation_prob: (0.10,0.01)
+mutation_prob: (0.01,0.0005) # high and low mutation probabilities for adaptive mutation
+random_mutation_min_val: -0.1 # units of np.pi
+random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
-parent_k: 1.0
-ga_instance: "tref_cinque_3phaselens_20cm"
+parent_k: 0.5
+ga_instance: "3phase_30cm_new_GA"
+keep_elitism: 2 # number of best solutions to keep per generation
 
 # Do we generate knots instead? 
 isKnot: True
 knotType: ['Trefoil', 'Cinquefoil']
-shapeParams: [[1,1,1.2],[1.4,1.4,1.2]]
-
-
+shapeParams: [[1,1,1.2],[1.2,1.2,1.4]]
