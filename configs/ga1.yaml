@@ -1,10 +1,10 @@
 # Field Parameters 
 dim: 128
 num_output_chans: 2
-output_chan_width: 0.23 # in mm 
+output_chan_width: 0.30 # in mm 
 LG_modes: [[3,0], [5,0]]
 w0: 0.10 # in mm
-gauss_filter_sigma: 1000
+gauss_filter_sigma: 800
 channel_sep: 1.5
 
 # Experimental Parameters of the Setup
@@ -25,7 +25,7 @@ multiPhase: False
 z_o: 30 # in cm
 
 # Genetic Parameters
-num_of_gens: 4.e5
+num_of_gens: 2.e5
 gen_start: 1.e4
 parents_mating: 4
 sol_per_pop: 20
@@ -38,7 +38,7 @@ random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
-ga_instance: "LG_3_5"
+ga_instance: "LG_3_5_GA800"
 keep_elitism: 2 # number of best solutions to keep per generation
 
 # Do we generate knots instead? 
