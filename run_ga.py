@@ -39,7 +39,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 5
+# shift = 5
 
 # *** OMIT IN CLUSTER
 
@@ -52,6 +52,7 @@ cnfg = yaml.load(stream, Loader=Loader)
 
 # Backward compatibility: supply defaults for new config keys
 cnfg.setdefault('circle_radius', 1.5)  # mm, used for circular output channel layouts
+cnfg.setdefault('fitness_func', 'secret_key' )
 
 ''' 
 Global/Optimization Parameters 
@@ -130,6 +131,8 @@ gen_saturate = cnfg['gen_saturate']
 
 keep_elitism = cnfg['keep_elitism']
 
+fitness_function = cnfg['fitness_func']
+
 last_pop = 0
 
 '''
@@ -164,6 +167,7 @@ Create the OAM beams that we need to sort
 list_of_OAMs = []
 
 output_chans = output_chan_circle(X, Y, output_chan_width, maxx, num_of_output_chans, circle_radius=circle_radius)
+
 
 if(isKnot):
     for ii in range(len(knotType)):
@@ -435,8 +439,9 @@ def fitness_func_sorting(ga_instance, solution, solution_idx):
     
     # Compute sorting performance 
     sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
+    #print(sorting_performance)
     
-    return sorting_performance
+    return np.abs(sorting_performance)
 
 def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     # Create the phase map(s) by reshaping the solution array
@@ -454,6 +459,7 @@ def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     
     # Product of the sorting performance w/ determinant of the crosstalk matrix makes up our new metric. 
     crosstalk_neo = sorting_performance*np.linalg.det(crosstalk_matrix)
+
     
     return crosstalk_neo
 
@@ -482,7 +488,7 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
     
     sorting_performance_neo = sorting_performance*secret_key
     
-    return sorting_performance_neo
+    return np.abs(sorting_performance_neo)
 
 
 def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
@@ -510,7 +516,7 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
     
     sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
     
-    return sorting_performance_neo 
+    return np.abs(sorting_performance_neo)
     
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are
@@ -622,7 +628,15 @@ elif fixedRotation:
 else:
     print(f"\nRotation: None")
 
+print(f"\nFitness Function: {fitness_function}")
+
 print("="*80 + "\n")
+
+# Select fitness function after initial optimization
+if fitness_function == 'secret_key':
+    fitness_func = fitness_func_secretKey
+elif fitness_function == 'bread':
+    fitness_func = fitness_func_secretKey_crosstalk
 
 # We begin by optimizing just the sorting performance for the first start_gen generations
 
@@ -650,7 +664,7 @@ ga_instance_sorting.run()
 
 ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func_secretKey,
+                       fitness_func=fitness_func,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,
