@@ -1,6 +1,6 @@
 # Field Parameters 
 dim: 128
-num_output_chans: 2
+num_output_chans: 3
 output_chan_width: 0.20 # in mm 
 LG_modes: [[3,0], [5,0]]
 w0: 0.10 # in mm
@@ -10,7 +10,7 @@ circle_radius: 1.5
 
 # Experimental Parameters of the Setup
 num_phase_maps_near: 1
-num_phase_maps_far: 1
+num_phase_maps_far: 0
 
 rot_angle: '0' # Rotates the incident field by rot_angle 
 fixedRotation: True 
@@ -39,11 +39,10 @@ random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
-ga_instance: "cinque_hopf_two_bread"
+ga_instance: "cinque_hopf_tref_one"
 keep_elitism: 2 # number of best solutions to keep per generation
-fitness_func: "bread"
 
 # Do we generate knots instead? 
 isKnot: True
-knotType: ['Cinquefoil', 'Hopflink']
-shapeParams: [[2.0,2.0,1.0],[0.6,0.6,1.0]]
+knotType: ['Cinquefoil', 'Hopflink', 'Trefoil']
+shapeParams: [[2.0,2.0,1.0],[0.6,0.6,1.0], [0.9,0.9,1.0]]
