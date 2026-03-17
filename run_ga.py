@@ -14,7 +14,7 @@ import argparse
 from yaml import Loader 
 import pickle as pkl
 
-from optical_functions import LG, propFF, propTF, cart2pol, oamModes, output_chan, output_chan_symmetric, output_chan_triangle, setKnotType, norm_field, shannon_entropy
+from optical_functions import LG, propFF, propTF, cart2pol, oamModes, output_chan, output_chan_symmetric, output_chan_triangle, output_chan_circle, setKnotType, norm_field, shannon_entropy
 from scipy.fft import ifft2, ifftshift, fft2, fftshift
 
 import matplotlib.pyplot as plt 
@@ -39,7 +39,7 @@ shift = args.ii
 
 # *** OMIT IN CLUSTER 
 
-shift = 1
+shift = 5
 
 # *** OMIT IN CLUSTER
 
@@ -50,6 +50,9 @@ shift = 1
 stream = open(f"configs/ga{shift}.yaml", 'r')
 cnfg = yaml.load(stream, Loader=Loader)
 
+# Backward compatibility: supply defaults for new config keys
+cnfg.setdefault('circle_radius', 1.5)  # mm, used for circular output channel layouts
+
 ''' 
 Global/Optimization Parameters 
 '''
@@ -58,6 +61,7 @@ N = cnfg['dim']
 num_of_output_chans = cnfg['num_output_chans']
 output_chan_width = cnfg['output_chan_width'] * mm # in mm 
 channel_sep = cnfg['channel_sep'] 
+circle_radius = cnfg['circle_radius']
 
 # Some parameters specifying the LG modes
 
@@ -159,14 +163,8 @@ Create the OAM beams that we need to sort
 
 list_of_OAMs = []
 
-if (num_of_output_chans==3): # We adapt a triangular configuration 
-   # def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
-    output_chans = output_chan_triangle(X, Y, output_chan_width, maxx, chan_sep=channel_sep)
-    
-else:
-    output_chans = output_chan_symmetric(X,Y,output_chan_width,maxx,num_of_output_chans, chan_sep=channel_sep)
-    
-    
+output_chans = output_chan_circle(X, Y, output_chan_width, maxx, num_of_output_chans, circle_radius=circle_radius)
+
 if(isKnot):
     for ii in range(len(knotType)):
         list_of_OAMs.append(oamModes(setKnotType(r, phi, w0, knotType[ii], shapeParams[ii]), output_chans[ii]))
