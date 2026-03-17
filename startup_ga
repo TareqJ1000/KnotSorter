@@ -1,5 +1,5 @@
 #!/bin/bash -l
-#SBATCH --array=0-6
+#SBATCH --array=0-5
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
@@ -7,7 +7,7 @@
 #SBATCH -o ./jobsOut/out.%j
 #SBATCH -e ./jobsErr/err.%j
 #SBATCH -D ./
-#SBATCH -J ks_ga_params
+#SBATCH -J knotSorts
 
 #srun ./script $SLURM_ARRAY_TASK_ID 
 

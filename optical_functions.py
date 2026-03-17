@@ -88,9 +88,6 @@ def propFF(u1, L1, la, z, isInverse = False):
     
     return u2, L2
 
-
-
-
 # LG modes 
 
 '''
@@ -246,6 +243,92 @@ def output_chan_symmetric(X, Y, rad_spot, maxx, num_of_spots, chan_sep=1.0):
     return fields # In principle, it suffices to return fields. 
 
 # This creates a specific triangle-like configuration for the symmetric sorting of three modes
+
+def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
+    
+    # The y-offset is set so that we form an equilbrium triangle 
+    
+    y_offset = (np.sqrt(3)*(chan_sep*mm))/2
+    
+    N = len(X)
+    spot_loc_x = []
+    spot_loc_y = []
+
+    # First two symmetric spots
+    spot_loc_x.append(chan_sep * mm)
+    spot_loc_y.append(0)
+
+    spot_loc_x.append(-chan_sep * mm)
+    spot_loc_y.append(0)
+
+    # Third spot centered horizontally, shifted down vertically
+    spot_loc_x.append(0)
+    spot_loc_y.append(-y_offset)
+
+    num_of_spots = 3  # Explicitly define since we're overriding symmetry
+    fields = np.empty((num_of_spots, N, N))
+
+    # Generate spots
+    for ii in range(num_of_spots):
+        X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
+        Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
+        h = np.abs(X_shifted[1] - X_shifted[2])
+        xx, yy = np.meshgrid(X_shifted, Y_shifted)
+        r, phi = cart2pol(xx, yy)
+
+        fields[ii] = pupil_function(r, rad_spot)
+
+    return fields
+
+
+# This creates channel spots arranged evenly on a circle
+
+def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0):
+    """
+    Place `num_of_spots` pupil apertures evenly spaced on a circle of radius
+    `circle_radius` (in mm) centered at the origin.
+
+    Parameters
+    ----------
+    X, Y : ndarray
+        Base coordinate vectors (only the length is used to infer grid size).
+    rad_spot : float
+        Radius of each pupil aperture.
+    maxx : float
+        Half-width of the numerical window used to build the meshgrid.
+    num_of_spots : int
+        Number of channels to place on the circle.
+    circle_radius : float, optional
+        Circle radius in millimeters. Default is 1.0 mm.
+
+    Returns
+    -------
+    fields : ndarray
+        Array of shape (num_of_spots, N, N) containing the pupil masks.
+    """
+
+    N = len(X)
+
+    # Compute centers on a circle (convert radius to meters via mm constant)
+    angles = np.linspace(0, 2 * np.pi, num_of_spots, endpoint=False)
+    spot_loc_x = circle_radius * mm * np.cos(angles)
+    spot_loc_y = circle_radius * mm * np.sin(angles)
+
+    fields = np.empty((num_of_spots, N, N), dtype=np.complex128)
+
+    for ii in range(num_of_spots):
+        X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
+        Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
+        h = np.abs(X_shifted[1] - X_shifted[2])
+        xx, yy = np.meshgrid(X_shifted, Y_shifted)
+        r, phi = cart2pol(xx, yy)
+
+        fields[ii] = pupil_function(r, rad_spot)
+
+    return fields
+
+
+# This creates a diagonal-like configuration pattern
 
 def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
     
