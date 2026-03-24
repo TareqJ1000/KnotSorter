@@ -288,6 +288,7 @@ def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
 # This creates channel spots arranged evenly on a circle
 
 def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0):
+    
     """
     Place `num_of_spots` pupil apertures evenly spaced on a circle of radius
     `circle_radius` (in mm) centered at the origin.

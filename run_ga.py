@@ -419,6 +419,8 @@ def compute_sorting_performance(phase_maps, list_of_OAMs, alpha=1.0):
     # alpha is a hyperparameter which adjusts the weight between the minimum and the sum of sorting performances across each channel. 
     # At alpha=0.0, we recover the old behavior, while at alpha=1.0, we consider the minimum
     
+    print(sorting_performance)
+
     overall_sort_perf = alpha*np.min(sorting_performance) - ((1-alpha)/d)*np.sum(sorting_performance)
 
     return overall_sort_perf, crosstalk_matrix, secret_key
@@ -469,7 +471,7 @@ def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     # Product of the sorting performance w/ determinant of the crosstalk matrix makes up our new metric. 
     crosstalk_neo = sorting_performance*np.linalg.det(crosstalk_matrix)
 
-    return np.abs(crosstalk_neo)
+    return np.real(crosstalk_neo)
 
 
 def fitness_func_secretKey(ga_instance, solution, solution_idx):
@@ -496,7 +498,7 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
     
     sorting_performance_neo = sorting_performance*secret_key
     
-    return np.abs(sorting_performance_neo)
+    return np.real(sorting_performance_neo)
 
 
 def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
@@ -524,7 +526,7 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
     
     sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
     
-    return np.abs(sorting_performance_neo)
+    return np.real(sorting_performance_neo)
     
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are
@@ -691,4 +693,3 @@ ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
 
 
 ga_instance_crosstalk.run()
-
