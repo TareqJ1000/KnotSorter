@@ -38,7 +38,7 @@ random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
-ga_instance: "cinque_hopf_one_test"
+ga_instance: "cinque_hopf_one"
 keep_elitism: 2 # number of best solutions to keep per generation
 
 # Do we generate knots instead? 

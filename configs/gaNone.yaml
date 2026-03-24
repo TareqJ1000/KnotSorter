@@ -43,6 +43,7 @@ parent_k: 0.5
 ga_instance: "test"
 keep_elitism: 2 # number of best solutions to keep per generation
 fitness_func: 'bread' # Selects the metric we want to implement. Types: 'secret_key', 'bread'
+alpha: 0.5
 
 # Do we generate knots instead? 
 isKnot: True

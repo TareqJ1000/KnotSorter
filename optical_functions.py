@@ -112,6 +112,7 @@ def LG(RHO,PHI,ell,p,w0,h,z,k):
     zeta_z = lambda z: np.arctan(z/z_o)
 
     N_factor = 1
+
     if (z == 0):
         AK = N_factor * np.exp(-(RHO/w0)**2) * ((RHO/w0)**abs(ell) * 
                                                     scipy.special.eval_genlaguerre(p,abs(ell),2*(RHO/w0)**2) * np.exp(1j * ell * PHI))
@@ -131,31 +132,34 @@ Ex - complex 2D array -  field
 phase - boolean - controls whether or not we wanna plot the phase
 '''
 
-def TotInt(Ex, phase=True):
+def TotInt(Ex, phase=True, cmappy='gist_grey', enable_colourbar='True'):
 
     if (phase==False): # Just plot the intensity
         fig, ax = plt.subplots(1,1, figsize=(8,4))
         #ax.set_title('Intensity')
-        intensity = ax.imshow(abs(Ex)**2, cmap="gist_gray")
+        intensity = ax.imshow(abs(Ex)**2, cmap=cmappy)
         ax.axis('off')
-        cbar = fig.colorbar(intensity, ax=ax)
+        if (enable_colourbar):
+            cbar = fig.colorbar(intensity, ax=ax)
     
     else:
 
         fig, ax =  plt.subplots(1,2,figsize=(8,4))
         ax[0].set_title('Intensity')
-        intensity = ax[0].imshow(abs(Ex)**2,cmap="gist_gray")
+        intensity = ax[0].imshow(abs(Ex)**2,cmap=cmappy)
         ax[0].axis('off')
         cbar=fig.colorbar(intensity, ax=ax[0])
         
         ax[1].set_title('Phase')
         phase = ax[1].imshow(np.angle(Ex), cmap="hsv", interpolation='nearest')
         ax[1].axis('off')
-        cbar=fig.colorbar(phase, ax=ax[1])
+        if (enable_colourbar):
+            cbar = fig.colorbar(phase, ax=ax[1])
+        #cbar=fig.colorbar(phase, ax=ax[1])
         plt.show()
     
     
-    
+
 '''
 Cartesian to Polar coordinates 
 x,y - x and y coordinates
@@ -269,6 +273,53 @@ def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
     fields = np.empty((num_of_spots, N, N))
 
     # Generate spots
+    for ii in range(num_of_spots):
+        X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
+        Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
+        h = np.abs(X_shifted[1] - X_shifted[2])
+        xx, yy = np.meshgrid(X_shifted, Y_shifted)
+        r, phi = cart2pol(xx, yy)
+
+        fields[ii] = pupil_function(r, rad_spot)
+
+    return fields
+
+
+# This creates channel spots arranged evenly on a circle
+
+def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0):
+    """
+    Place `num_of_spots` pupil apertures evenly spaced on a circle of radius
+    `circle_radius` (in mm) centered at the origin.
+
+    Parameters
+    ----------
+    X, Y : ndarray
+        Base coordinate vectors (only the length is used to infer grid size).
+    rad_spot : float
+        Radius of each pupil aperture.
+    maxx : float
+        Half-width of the numerical window used to build the meshgrid.
+    num_of_spots : int
+        Number of channels to place on the circle.
+    circle_radius : float, optional
+        Circle radius in millimeters. Default is 1.0 mm.
+
+    Returns
+    -------
+    fields : ndarray
+        Array of shape (num_of_spots, N, N) containing the pupil masks.
+    """
+
+    N = len(X)
+
+    # Compute centers on a circle (convert radius to meters via mm constant)
+    angles = np.linspace(0, 2 * np.pi, num_of_spots, endpoint=False)
+    spot_loc_x = circle_radius * mm * np.cos(angles)
+    spot_loc_y = circle_radius * mm * np.sin(angles)
+
+    fields = np.empty((num_of_spots, N, N), dtype=np.complex128)
+
     for ii in range(num_of_spots):
         X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
         Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
