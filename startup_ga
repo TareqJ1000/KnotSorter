@@ -7,7 +7,7 @@
 #SBATCH -o ./jobsOut/out.%j
 #SBATCH -e ./jobsErr/err.%j
 #SBATCH -D ./
-#SBATCH -J knotSorts
+#SBATCH -J KS1000GA
 
 #srun ./script $SLURM_ARRAY_TASK_ID 
 
