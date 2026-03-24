@@ -6,7 +6,7 @@ LG_modes: [[3,0], [5,0]]
 w0: 0.10 # in mm
 gauss_filter_sigma: 500
 channel_sep: 1.5
-circle_radius: 1.0
+circle_radius: 1.5
 
 # Experimental Parameters of the Setup
 num_phase_maps_near: 1
@@ -39,10 +39,10 @@ random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
-ga_instance: "cinque_hopf_tref_one_shorter_circle"
+ga_instance: "cinque_hopf_tref_one_hard_min"
 keep_elitism: 2 # number of best solutions to keep per generation
 fitness_func: "secret_key"
-alpha: 0.0
+alpha: 1.0
 
 
 # Do we generate knots instead? 

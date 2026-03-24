@@ -53,8 +53,8 @@ cnfg = yaml.load(stream, Loader=Loader)
 # Backward compatibility: supply defaults for new config keys
 cnfg.setdefault('circle_radius', 1.5)  # mm, used for circular output channel layouts
 cnfg.setdefault('fitness_func', 'secret_key' ) 
-cnfg.setdefault('alpha', 1.0) # This controls whether we choose the worst performing channel as a bottleneck for our function or no
-                              # at alpha=1.0, we recover our old fitness function behavior
+cnfg.setdefault('alpha', 0.0) # This controls whether we choose the worst performing channel as a bottleneck for our function or no
+                              # at alpha=0.0, we recover our old fitness function behavior
 
 ''' 
 Global/Optimization Parameters 
@@ -450,7 +450,7 @@ def fitness_func_sorting(ga_instance, solution, solution_idx):
     sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
     #print(sorting_performance)
     
-    return np.abs(sorting_performance)
+    return np.real(sorting_performance)
 
 def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     # Create the phase map(s) by reshaping the solution array
@@ -469,7 +469,7 @@ def fitness_func_crosstalk(ga_instance, solution, solution_idx):
     # Product of the sorting performance w/ determinant of the crosstalk matrix makes up our new metric. 
     crosstalk_neo = sorting_performance*np.linalg.det(crosstalk_matrix)
 
-    return np.abs(crosstalk_neo)
+    return np.real(crosstalk_neo)
 
 
 def fitness_func_secretKey(ga_instance, solution, solution_idx):
@@ -496,7 +496,7 @@ def fitness_func_secretKey(ga_instance, solution, solution_idx):
     
     sorting_performance_neo = sorting_performance*secret_key
     
-    return np.abs(sorting_performance_neo)
+    return np.real(sorting_performance_neo)
 
 
 def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
@@ -524,7 +524,7 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
     
     sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
     
-    return np.abs(sorting_performance_neo)
+    return np.real(sorting_performance_neo)
     
 # c and k are empirical scaling factors that control the probability distribution. 
 # c determines how well favoured fit individuals are

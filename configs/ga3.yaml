@@ -4,13 +4,13 @@ num_output_chans: 3
 output_chan_width: 0.20 # in mm 
 LG_modes: [[3,0], [5,0]]
 w0: 0.10 # in mm
-gauss_filter_sigma: 500
+gauss_filter_sigma: 1000
 channel_sep: 1.5
-circle_radius: 1.0
+circle_radius: 1.5 # in mm, radius of the circle on which the output channels are placed. Only relevant for 3 or more output channels
 
 # Experimental Parameters of the Setup
 num_phase_maps_near: 1
-num_phase_maps_far: 0
+num_phase_maps_far: 1
 
 rot_angle: '0' # Rotates the incident field by rot_angle 
 fixedRotation: True 
@@ -39,11 +39,10 @@ random_mutation_max_val: 0.1  # units of np.pi
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
-ga_instance: "cinque_hopf_tref_one_shorter_circle"
+ga_instance: "cinque_hopf_tref_two_1000"
 keep_elitism: 2 # number of best solutions to keep per generation
 fitness_func: "secret_key"
 alpha: 0.0
-
 
 # Do we generate knots instead? 
 isKnot: True
