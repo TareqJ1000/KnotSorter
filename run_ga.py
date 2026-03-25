@@ -53,8 +53,9 @@ cnfg = yaml.load(stream, Loader=Loader)
 # Backward compatibility: supply defaults for new config keys
 cnfg.setdefault('circle_radius', 1.5)  # mm, used for circular output channel layouts
 cnfg.setdefault('fitness_func', 'secret_key' ) 
-cnfg.setdefault('alpha', 0.0) # This controls whether we choose the worst performing channel as a bottleneck for our function or no
-                              # at alpha=0.0, we recover our old fitness function behavior
+cnfg.setdefault('alpha', 1.0) # This controls whether we choose the worst performing channel as a bottleneck for our function or no
+# at alpha=1.0, we recover our old fitness function behavior             
+cnfg.setdefault('gamma', 1.0) # This controls the influence of the determinant of the crosstalk determinant
 
 ''' 
 Global/Optimization Parameters 
@@ -135,6 +136,7 @@ keep_elitism = cnfg['keep_elitism']
 
 fitness_function = cnfg['fitness_func']
 alpha = cnfg['alpha']
+gamma = cnfg['gamma']
 
 last_pop = 0
 
@@ -377,7 +379,6 @@ def compute_sorting_performance(phase_maps, list_of_OAMs, alpha=1.0):
                 final_field = field_lens_2
         
         # We normalize the final field and compute the intensity 
-        
         final_field = norm_field(final_field,h)
         final_field_int = np.abs(final_field)**2
         
@@ -400,6 +401,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs, alpha=1.0):
         sorting_performance[ii] = correct_chans - incorrect_chans
         
         # Compute the detector effeciency 
+
         detect_eff = correct_chans 
         crosstalk_matrix[ii,ii] = detect_eff 
         
@@ -419,6 +421,8 @@ def compute_sorting_performance(phase_maps, list_of_OAMs, alpha=1.0):
     # alpha is a hyperparameter which adjusts the weight between the minimum and the sum of sorting performances across each channel. 
     # At alpha=0.0, we recover the old behavior, while at alpha=1.0, we consider the minimum
     
+    #print(sorting_performance)
+
     overall_sort_perf = alpha*np.min(sorting_performance) - ((1-alpha)/d)*np.sum(sorting_performance)
 
     return overall_sort_perf, crosstalk_matrix, secret_key
@@ -521,8 +525,17 @@ def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
     
     # Compute sorting performance 
     sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
-    
-    sorting_performance_neo = sorting_performance*secret_key*np.linalg.det(crosstalk_matrix)
+
+    # NEW: some things to control the influence of the determinant
+
+    # First, normalize the crosstalk matrix row-by-row
+    row_sums = crosstalk_matrix.sum(axis=1, keepdims=True)
+    crosstalk_matrix_norm = crosstalk_matrix/(row_sums + 1e-12) # small factor is to avoid instability
+
+    # Compute the determinant
+    det_c_m = np.abs(np.linalg.det(crosstalk_matrix_norm))**gamma
+
+    sorting_performance_neo = sorting_performance*secret_key*det_c_m
     
     return np.real(sorting_performance_neo)
     
@@ -638,6 +651,7 @@ else:
 
 print(f"\nFitness Function: {fitness_function}")
 print(f"\nSorting Performance Alpha: {alpha}")
+print(f"\nDeterminant Exponent Gamma: {gamma}")
 
 print("="*80 + "\n")
 
@@ -651,7 +665,7 @@ elif fitness_function == 'bread':
 
 ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func,
+                       fitness_func=fitness_func_sorting,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,
