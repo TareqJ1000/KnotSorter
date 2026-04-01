@@ -421,9 +421,7 @@ def compute_sorting_performance(phase_maps, list_of_OAMs, alpha=1.0):
     # alpha is a hyperparameter which adjusts the weight between the minimum and the sum of sorting performances across each channel. 
     # At alpha=0.0, we recover the old behavior, while at alpha=1.0, we consider the minimum
     
-    #print(sorting_performance)
-
-    overall_sort_perf = alpha*np.min(sorting_performance) - ((1-alpha)/d)*np.sum(sorting_performance)
+    overall_sort_perf = alpha*np.min(sorting_performance) + ((1-alpha)/d)*np.sum(sorting_performance)
 
     return overall_sort_perf, crosstalk_matrix, secret_key
     
@@ -665,7 +663,7 @@ elif fitness_function == 'bread':
 
 ga_instance_sorting = pygad.GA(num_generations=gen_start,
                        num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func,
+                       fitness_func=fitness_func_sorting,
                        sol_per_pop=sol_per_pop,
                        num_genes=num_genes,
                        init_range_low=init_range_low,

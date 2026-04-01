@@ -132,7 +132,7 @@ Ex - complex 2D array -  field
 phase - boolean - controls whether or not we wanna plot the phase
 '''
 
-def TotInt(Ex, phase=True, cmappy='gist_grey', enable_colourbar='True'):
+def TotInt(Ex, phase=True, cmappy='hot', enable_colourbar='True'):
 
     if (phase==False): # Just plot the intensity
         fig, ax = plt.subplots(1,1, figsize=(8,4))
