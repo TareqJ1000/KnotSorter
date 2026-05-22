@@ -15,5 +15,8 @@ oldenv
 inputs_outputs
 phase_exports
 visualization_comparison.ipynb
+*.csv
+*.mp4
+
 
 
