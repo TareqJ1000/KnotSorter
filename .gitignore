@@ -9,6 +9,11 @@ jobsErr
 jobsOut
 *.gif
 *.png
+*.pdf
 oldenv
 *.html 
-input_outputs
+inputs_outputs
+phase_exports
+visualization_comparison.ipynb
+
+
