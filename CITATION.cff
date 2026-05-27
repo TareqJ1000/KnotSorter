@@ -1,0 +1,42 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: KnotSorter
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: 'Tareq '
+    email: tjaouni@uottawa.ca
+    family-names: Jaouni
+  - given-names: Roohollah
+    family-names: Ghobadi
+  - given-names: Ebrahim
+    family-names: Karimi
+repository-code: 'https://github.com/TareqJ1000/KnotSorter.git'
+abstract: >-
+  Optical knots are topologically structured light fields
+  whose phase singularities trace linked or knotted
+  trajectories during propagation, making them promising
+  candidates for high-dimensional optical information
+  carriers. Their use in communication or
+  quantum-information protocols, however, requires a
+  practical readout method that can distinguish a chosen
+  knot alphabet with low crosstalk. Here, we demonstrate a
+  proof-of-principle full-field sorter for optical knots
+  using one or two optimized phase-only elements. The sorter
+  maps each input knot to a predefined output region and is
+  optimized directly from the output intensity distributions
+  to enhance correct assignment, suppress crosstalk, and
+  avoid degenerate mappings between distinct knots. We apply
+  the method to an alphabet composed of the Hopf link,
+  trefoil, and cinquefoil optical knots. Two optimized phase
+  planes improve the sorting performance relative to a
+  single plane and enable high distinguishability for the
+  three-knot alphabet. We further benchmark the sorter under
+  common experimental imperfections. These results extend
+  full-field optical mode sorting to topologically
+  structured light and provide a readout route for
+  knot-based high-dimensional optical communication.
