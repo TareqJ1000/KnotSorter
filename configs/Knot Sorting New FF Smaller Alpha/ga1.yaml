@@ -49,3 +49,4 @@ gamma: 1.0
 isKnot: True
 knotType: ['Trefoil', 'Hopflink']
 shapeParams: [[0.9,0.9,1.0],[0.6,0.6,1.0]]
+
