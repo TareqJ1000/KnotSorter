@@ -353,10 +353,16 @@ def _rotation_angle_for_fitness():
 def fitness_func_sorting(ga_instance, solution, solution_idx):
     _, phase_maps, stages = decode_solution(solution)
     input_modes = create_rotated_modes(_rotation_angle_for_fitness())
-    sorting_performance, *_ = compute_sorting_performance(
+    sorting_performance, _, _, _, throughput, _ = compute_sorting_performance(
         phase_maps, input_modes, stages
     )
-    return float(np.real(sorting_performance))
+
+    throughput_factor = (
+        1.0 if throughput_exponent == 0.0
+        else throughput**throughput_exponent
+    )
+
+    return float(np.real(sorting_performance*throughput_factor))
 
 
 def fitness_func_secret_key(ga_instance, solution, solution_idx):
