@@ -53,6 +53,8 @@ ga_instance: smoke_fresnel_3plane
 fitness_func: full
 alpha: 0.5
 gamma: 1.0
+throughput_metric: geometric_mean
+throughput_exponent: 1.0
 
 isKnot: true
 knotType: [Trefoil, Cinquefoil]

@@ -391,6 +391,7 @@ def propagate_fresnel_lens_train(field, phase_maps, grid_side_length,
                                  return_intermediate=False,
                                  padding_factor=1.0,
                                  return_padded=False):
+
     """Propagate through one, two, or three phase/lens stages.
 
     ``phase_maps`` must contain complex unit-modulus transmittances. A stage is
@@ -775,6 +776,45 @@ def shannon_entropy(x,d):
         else -correct_probability*np.log2(correct_probability)
     )
     return error_term+correct_term
+
+
+def balanced_detector_throughput(efficiency_matrix, method="geometric_mean"):
+    """Combine accepted detector efficiencies across the input alphabet.
+
+    Each row of ``efficiency_matrix`` corresponds to one input and each column
+    to an accepted detector window. The row sum is therefore the fraction of
+    that input's incident power accepted by the detector bank. The geometric
+    mean is the default because it rewards throughput while penalizing a
+    solution that sacrifices any one input mode.
+
+    The accepted fractions are clipped to ``[0, 1]`` to suppress floating-point
+    excursions beyond the physical power-fraction range. The unclipped raw
+    matrix remains available to callers for diagnostics.
+    """
+    matrix = np.asarray(efficiency_matrix, dtype=float)
+    if matrix.ndim != 2 or matrix.shape[0] == 0:
+        raise ValueError("efficiency_matrix must be a non-empty 2D array.")
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("efficiency_matrix must contain only finite values.")
+    if np.any(matrix < -1e-12):
+        raise ValueError("Detector efficiencies cannot be negative.")
+
+    accepted = np.clip(matrix.sum(axis=1), 0.0, 1.0)
+    if method == "geometric_mean":
+        throughput = (
+            0.0 if np.any(accepted == 0.0)
+            else np.exp(np.mean(np.log(accepted)))
+        )
+    elif method == "minimum":
+        throughput = np.min(accepted)
+    elif method == "arithmetic_mean":
+        throughput = np.mean(accepted)
+    else:
+        raise ValueError(
+            "throughput_metric must be 'geometric_mean', 'minimum', "
+            "or 'arithmetic_mean'."
+        )
+    return float(throughput), accepted
 
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 

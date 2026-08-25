@@ -24,6 +24,7 @@ from scipy.fft import fft2, fftshift, ifft2, ifftshift
 
 from optical_functions import (
     LG,
+    balanced_detector_throughput,
     build_fresnel_lens_kernels,
     cart2pol,
     fresnel_sampling_diagnostics,
@@ -76,12 +77,24 @@ cnfg.setdefault("circle_radius", 1.5)
 cnfg.setdefault("fitness_func", "secret_key")
 cnfg.setdefault("alpha", 1.0)
 cnfg.setdefault("gamma", 1.0)
+cnfg.setdefault("throughput_metric", "geometric_mean")
+cnfg.setdefault("throughput_exponent", 1.0)
 cnfg.setdefault("keep_elitism", 1)
 cnfg.setdefault("random_mutation_min_val", -1.0)
 cnfg.setdefault("random_mutation_max_val", 1.0)
 cnfg.setdefault("pixel_pitch_um", 20.0)
 cnfg.setdefault("wavelength_nm", 780.0)
 cnfg.setdefault("random_seed", None)
+
+throughput_metric = str(cnfg["throughput_metric"])
+throughput_exponent = float(cnfg["throughput_exponent"])
+if throughput_metric not in {"geometric_mean", "minimum", "arithmetic_mean"}:
+    raise ValueError(
+        "throughput_metric must be 'geometric_mean', 'minimum', "
+        "or 'arithmetic_mean'."
+    )
+if not np.isfinite(throughput_exponent) or throughput_exponent < 0:
+    raise ValueError("throughput_exponent must be finite and non-negative.")
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +266,7 @@ def propagate_legacy(field, phase_maps):
 
 
 def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
-    """Return balanced contrast, efficiency matrix, key rate, and probabilities."""
+    """Return conditional sorting metrics and absolute detector throughput."""
     if alpha is None:
         alpha = float(cnfg["alpha"])
     d = len(input_modes)
@@ -300,6 +313,9 @@ def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
         out=np.zeros_like(efficiency_matrix),
         where=accepted_power > 0,
     )
+    balanced_throughput, accepted_efficiencies = balanced_detector_throughput(
+        efficiency_matrix, method=throughput_metric
+    )
 
     correct = np.diag(assignment_matrix)
     incorrect_mean = (
@@ -316,7 +332,14 @@ def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
         0.0,
         np.log2(d)-2*shannon_entropy(symbol_error, d),
     )
-    return balanced_contrast, efficiency_matrix, secret_key, assignment_matrix
+    return (
+        balanced_contrast,
+        efficiency_matrix,
+        secret_key,
+        assignment_matrix,
+        balanced_throughput,
+        accepted_efficiencies,
+    )
 
 
 def _rotation_angle_for_fitness():
@@ -339,7 +362,7 @@ def fitness_func_sorting(ga_instance, solution, solution_idx):
 def fitness_func_secret_key(ga_instance, solution, solution_idx):
     _, phase_maps, stages = decode_solution(solution)
     input_modes = create_rotated_modes(_rotation_angle_for_fitness())
-    sorting_performance, _, secret_key, _ = compute_sorting_performance(
+    sorting_performance, _, secret_key, _, _, _ = compute_sorting_performance(
         phase_maps, input_modes, stages
     )
     return float(np.real(sorting_performance*secret_key))
@@ -348,11 +371,17 @@ def fitness_func_secret_key(ga_instance, solution, solution_idx):
 def fitness_func_full(ga_instance, solution, solution_idx):
     _, phase_maps, stages = decode_solution(solution)
     input_modes = create_rotated_modes(_rotation_angle_for_fitness())
-    sorting_performance, _, secret_key, assignment_matrix = (
+    sorting_performance, _, secret_key, assignment_matrix, throughput, _ = (
         compute_sorting_performance(phase_maps, input_modes, stages)
     )
     distinguishability = abs(np.linalg.det(assignment_matrix))**float(cnfg["gamma"])
-    return float(np.real(sorting_performance*secret_key*distinguishability))
+    throughput_factor = (
+        1.0 if throughput_exponent == 0.0
+        else throughput**throughput_exponent
+    )
+    return float(np.real(
+        sorting_performance*secret_key*distinguishability*throughput_factor
+    ))
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +581,10 @@ def print_configuration():
                 message += f" (lens ratio {lens['lens_ratio']:.3f})"
             print(message)
     print(f"Fitness: {fitness_name}, alpha={cnfg['alpha']}, gamma={cnfg['gamma']}")
+    print(
+        f"Throughput factor: {throughput_metric}, "
+        f"exponent={throughput_exponent:g}"
+    )
     print("="*80+"\n")
 
 
@@ -566,6 +599,9 @@ if args.validate_only:
     print(metrics[1])
     print("Validation candidate assignment matrix:")
     print(metrics[3])
+    print("Validation accepted detector efficiency per input:")
+    print(metrics[5])
+    print(f"Validation balanced throughput: {metrics[4]:.8g}")
     raise SystemExit(0)
 
 

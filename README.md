@@ -87,6 +87,30 @@ memory use grows approximately as the square of the padding factor, so the
 production YAML files use `1.0` by default. `configs/ga_smoke.yaml` uses `2.0`
 to exercise the padded path.
 
+### Fitness and detector throughput
+
+The conditional assignment matrix still controls sorting contrast, key rate,
+and determinant-based distinguishability. The `full`/`bread` objective also
+multiplies those terms by a balanced absolute detector-throughput factor:
+
+```text
+eta_n = sum_m I_nm
+eta_bal = (product_n eta_n)^(1/d)
+F_full = C_bal R_d |det(p)|^gamma eta_bal^beta.
+```
+
+Configure the throughput term alongside `alpha` and `gamma`:
+
+```yaml
+throughput_metric: geometric_mean # geometric_mean, minimum, arithmetic_mean
+throughput_exponent: 1.0          # beta; 0 restores conditional-only fitness
+```
+
+The geometric mean is recommended because a solution cannot obtain a high
+throughput score by sacrificing one knot while transmitting the others. With
+`throughput_exponent: 1.0`, a uniform factor-of-ten reduction in accepted
+detector power produces a factor-of-ten reduction in the full fitness.
+
 ## Running
 
 Validate the setup, sampling diagnostics, and a candidate propagation without
@@ -135,4 +159,5 @@ the computational side length doubles while the pixel pitch stays fixed.
 
 The tests cover Fresnel power conservation, centered padding and cropping, the
 exact thin-lens phase, the front-to-back focal-plane Fourier limit, all three
-phase stages, geometry encoding, detector placement, and sampling diagnostics.
+phase stages, geometry encoding, detector placement, sampling diagnostics, and
+balanced detector-throughput fitness.

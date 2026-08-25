@@ -4,6 +4,7 @@ import numpy as np
 from scipy.fft import fft2, fftshift, ifftshift
 
 from optical_functions import (
+    balanced_detector_throughput,
     cart2pol,
     center_crop,
     center_pad,
@@ -215,6 +216,28 @@ class SorterConfigurationTests(unittest.TestCase):
         ]
         self.assertAlmostEqual(centers[0], 0.5e-3, delta=pitch)
         self.assertAlmostEqual(centers[1], -0.5e-3, delta=pitch)
+
+
+class FitnessMetricTests(unittest.TestCase):
+    def test_geometric_throughput_penalizes_uniformly_low_efficiency(self):
+        efficient = np.array([[0.495, 0.005], [0.005, 0.495]])
+        inefficient = 1e-8*efficient
+
+        efficient_score, efficient_rows = balanced_detector_throughput(efficient)
+        inefficient_score, inefficient_rows = balanced_detector_throughput(
+            inefficient
+        )
+
+        self.assertAlmostEqual(efficient_score, 0.5)
+        self.assertAlmostEqual(inefficient_score/efficient_score, 1e-8)
+        np.testing.assert_allclose(inefficient_rows/efficient_rows, 1e-8)
+
+    def test_geometric_throughput_penalizes_a_weak_input(self):
+        efficiency = np.array([[0.45, 0.05], [0.005, 0.12]])
+        throughput, accepted = balanced_detector_throughput(efficiency)
+
+        np.testing.assert_allclose(accepted, [0.5, 0.125])
+        self.assertAlmostEqual(throughput, 0.25)
 
 
 if __name__ == "__main__":

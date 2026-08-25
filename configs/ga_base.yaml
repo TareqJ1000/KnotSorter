@@ -61,6 +61,8 @@ ga_instance: change_me_fresnel_2plane
 fitness_func: full            # secret_key, bread, or full
 alpha: 0.5                    # worst-channel versus mean-channel contrast
 gamma: 1.0                    # assignment-matrix determinant exponent
+throughput_metric: geometric_mean # balances accepted power across input knots
+throughput_exponent: 1.0      # beta; 0 restores conditional-only fitness
 
 # Input alphabet
 isKnot: true
