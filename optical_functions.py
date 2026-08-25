@@ -32,9 +32,27 @@ z - propagation distance (w0)
 '''
 
 def propTF(u1,L,la,z):
+    """Propagate a square, uniformly sampled field with Fresnel diffraction.
+
+    This is the transfer-function implementation from Voelz, Eqs. (5.1)-(5.2).
+    ``L`` is the full side length of both the source and observation grids. The
+    longitudinal carrier phase ``exp(1j*k*z)`` is intentionally omitted because
+    it has no effect on the transverse intensity or on subsequent phase-only
+    modulation.
+    """
+    if z == 0:
+        return np.array(u1, dtype=np.complex128, copy=True)
+
     M,nn=u1.shape
+    if M != nn:
+        raise ValueError("propTF requires a square field array.")
+    if L <= 0 or la <= 0:
+        raise ValueError("L and wavelength must be positive.")
+
     dx=L/M
-    fx=np.arange(-1/(2*dx),1/(2*dx),1/L)
+    # Writing the frequency grid in terms of integer samples avoids occasional
+    # off-by-one lengths caused by floating-point np.arange endpoints.
+    fx=(np.arange(M) - M//2)/L
     Fx, Fy = np.meshgrid(fx, fx)
     H=np.exp(-1j*np.pi*la*z*(Fx**2+Fy**2))
     
@@ -172,12 +190,278 @@ def cart2pol(x, y):
 
 
 
-def lens_phase(rr,lens_rad, k, f): 
-    t = 1
-    pupil_func = (np.where(rr**2 < lens_rad**2,t, np.zeros_like(rr)))
-    trans_func = pupil_func*np.exp(-1j*(2*k/f)*(rr)**2)
-    
-    return pupil_func*np.exp(-1j*(2*k/f)*(rr)**2)
+def lens_phase(rr, lens_rad, k, f):
+    """Return the complex transmittance of an ideal paraxial thin lens.
+
+    The phase is ``exp(-1j*k*r**2/(2*f))`` (Voelz Eq. 6.12). ``lens_rad``
+    may be ``None`` to omit the finite circular pupil.
+    """
+    if f == 0:
+        raise ValueError("The focal length must be non-zero.")
+
+    if lens_rad is None:
+        pupil_func = np.ones_like(rr, dtype=float)
+    else:
+        if lens_rad <= 0:
+            raise ValueError("The lens aperture radius must be positive.")
+        pupil_func = np.where(rr <= lens_rad, 1.0, 0.0)
+
+    return pupil_func*np.exp(-1j*k*rr**2/(2*f))
+
+
+def padded_grid_size(grid_size, padding_factor=1.0):
+    """Return a centered padded size while preserving the source-grid parity."""
+    if int(grid_size) != grid_size or grid_size <= 0:
+        raise ValueError("grid_size must be a positive integer.")
+    if not np.isfinite(padding_factor) or padding_factor < 1:
+        raise ValueError("padding_factor must be at least 1.")
+
+    grid_size = int(grid_size)
+    padded_size = max(grid_size, int(np.ceil(grid_size*padding_factor)))
+    # Equal padding on both sides keeps the optical axis on the same sample.
+    if (padded_size-grid_size) % 2:
+        padded_size += 1
+    return padded_size
+
+
+def center_pad(array, output_shape, fill_value=0):
+    """Embed a 2-D array in the center of a larger array."""
+    array = np.asarray(array)
+    if array.ndim != 2:
+        raise ValueError("center_pad requires a two-dimensional array.")
+    if len(output_shape) != 2:
+        raise ValueError("output_shape must contain two dimensions.")
+    if any(outer < inner for outer, inner in zip(output_shape, array.shape)):
+        raise ValueError("The padded shape cannot be smaller than the input.")
+    if any((outer-inner) % 2 for outer, inner in zip(output_shape, array.shape)):
+        raise ValueError("Centered padding requires equal padding on both sides.")
+
+    output = np.full(output_shape, fill_value, dtype=np.result_type(
+        array.dtype, np.asarray(fill_value).dtype
+    ))
+    starts = [(outer-inner)//2 for outer, inner in zip(output_shape, array.shape)]
+    output[
+        starts[0]:starts[0]+array.shape[0],
+        starts[1]:starts[1]+array.shape[1],
+    ] = array
+    return output
+
+
+def center_crop(array, output_shape):
+    """Return the centered 2-D crop with ``output_shape``."""
+    array = np.asarray(array)
+    if array.ndim != 2:
+        raise ValueError("center_crop requires a two-dimensional array.")
+    if len(output_shape) != 2:
+        raise ValueError("output_shape must contain two dimensions.")
+    if any(outer < inner for outer, inner in zip(array.shape, output_shape)):
+        raise ValueError("The crop shape cannot exceed the input shape.")
+    if any((outer-inner) % 2 for outer, inner in zip(array.shape, output_shape)):
+        raise ValueError("Centered cropping requires equal cropping on both sides.")
+
+    starts = [(outer-inner)//2 for outer, inner in zip(array.shape, output_shape)]
+    return array[
+        starts[0]:starts[0]+output_shape[0],
+        starts[1]:starts[1]+output_shape[1],
+    ]
+
+
+def fresnel_sampling_diagnostics(grid_side_length, grid_size, wavelength,
+                                 propagation_distance=None,
+                                 focal_length=None,
+                                 lens_radius=None,
+                                 padding_factor=1.0):
+    """Return dimensionless Fresnel and thin-lens sampling diagnostics.
+
+    For the transfer-function propagator, ``tf_ratio <= 1`` satisfies Voelz's
+    oversampling condition ``dx >= wavelength*z/L``. For a finite thin lens,
+    ``lens_ratio >= 1`` satisfies ``f_number >= dx/wavelength``.
+    """
+    if grid_side_length <= 0 or grid_size <= 0 or wavelength <= 0:
+        raise ValueError("Grid length, grid size, and wavelength must be positive.")
+
+    dx = grid_side_length/grid_size
+    computational_size = padded_grid_size(grid_size, padding_factor)
+    computational_length = dx*computational_size
+    diagnostics = {
+        "dx": dx,
+        "computational_grid_size": computational_size,
+        "computational_side_length": computational_length,
+        "effective_padding_factor": computational_size/grid_size,
+    }
+
+    if propagation_distance is not None:
+        diagnostics["tf_ratio"] = (
+            wavelength*abs(propagation_distance)/(computational_length*dx)
+        )
+        diagnostics["critical_distance"] = computational_length*dx/wavelength
+
+    if focal_length is not None and lens_radius is not None:
+        if lens_radius <= 0:
+            raise ValueError("The lens aperture radius must be positive.")
+        f_number = abs(focal_length)/(2*lens_radius)
+        diagnostics["f_number"] = f_number
+        diagnostics["minimum_sampled_f_number"] = dx/wavelength
+        diagnostics["lens_ratio"] = f_number/(dx/wavelength)
+
+    return diagnostics
+
+
+def build_fresnel_lens_kernels(field_shape, grid_side_length, wavelength,
+                               stages, rr, lens_radius=None,
+                               padding_factor=1.0):
+    """Precompute propagation and lens kernels for a phase/lens train.
+
+    Each stage is a mapping with three distances in metres::
+
+        phase plane -> z_to_lens -> thin lens(f) -> z_after_lens
+
+    The final stage ends at the detector plane. Earlier stages end at the next
+    phase plane. ``padding_factor`` expands the computational window without
+    changing the pixel pitch. The returned kernels can be reused for every
+    input mode when evaluating a single candidate sorter geometry.
+    """
+    rows, cols = field_shape
+    if rows != cols:
+        raise ValueError("Fresnel lens trains require square field arrays.")
+    if rr.shape != field_shape:
+        raise ValueError("rr must have the same shape as the propagated field.")
+
+    computational_size = padded_grid_size(rows, padding_factor)
+    dx = grid_side_length/rows
+    computational_length = dx*computational_size
+    fx = (
+        np.arange(computational_size)-computational_size//2
+    )/computational_length
+    Fx, Fy = np.meshgrid(fx, fx)
+    if computational_size == rows:
+        computational_rr = rr
+    else:
+        coordinates = dx*(
+            np.arange(computational_size)-computational_size//2
+        )
+        computational_xx, computational_yy = np.meshgrid(
+            coordinates, coordinates
+        )
+        computational_rr = np.sqrt(
+            computational_xx**2+computational_yy**2
+        )
+    k = 2*np.pi/wavelength
+    kernels = []
+
+    for index, stage in enumerate(stages):
+        missing = {"z_to_lens", "focal_length", "z_after_lens"} - set(stage)
+        if missing:
+            raise ValueError(
+                f"Optical stage {index} is missing: {', '.join(sorted(missing))}."
+            )
+
+        z_to_lens = float(stage["z_to_lens"])
+        focal_length = float(stage["focal_length"])
+        z_after_lens = float(stage["z_after_lens"])
+        if z_to_lens < 0 or z_after_lens < 0:
+            raise ValueError("Free-space propagation distances cannot be negative.")
+
+        h_before = np.exp(
+            -1j*np.pi*wavelength*z_to_lens*(Fx**2 + Fy**2)
+        )
+        h_after = np.exp(
+            -1j*np.pi*wavelength*z_after_lens*(Fx**2 + Fy**2)
+        )
+        kernels.append({
+            "before": fftshift(h_before),
+            "lens": lens_phase(
+                computational_rr, lens_radius, k, focal_length
+            ),
+            "after": fftshift(h_after),
+        })
+
+    return kernels
+
+
+def _propagate_with_kernel(field, transfer_function):
+    """Apply a precomputed, Voelz-style Fresnel transfer function."""
+    spectrum = fft2(fftshift(field))
+    return ifftshift(ifft2(transfer_function*spectrum))
+
+
+def propagate_fresnel_lens_train(field, phase_maps, grid_side_length,
+                                 wavelength, stages, rr,
+                                 lens_radius=None, kernels=None,
+                                 return_intermediate=False,
+                                 padding_factor=1.0,
+                                 return_padded=False):
+    """Propagate through one, two, or three phase/lens stages.
+
+    ``phase_maps`` must contain complex unit-modulus transmittances. A stage is
+    applied after each phase plane, including the final propagation to the
+    detector. More than three planes are rejected deliberately so configuration
+    mistakes do not silently create a different architecture. With padding,
+    the incident field is zero padded and the phase plates are unity padded;
+    the field remains expanded through the full train and is cropped only at
+    the detector unless ``return_padded`` is true.
+    """
+    phase_maps = np.asarray(phase_maps)
+    if phase_maps.ndim != 3:
+        raise ValueError("phase_maps must have shape (planes, rows, columns).")
+    if not 1 <= len(phase_maps) <= 3:
+        raise ValueError("The sorter supports one, two, or three phase planes.")
+    if len(stages) != len(phase_maps):
+        raise ValueError("There must be exactly one optical stage per phase plane.")
+    if phase_maps.shape[1:] != np.shape(field):
+        raise ValueError("Every phase map must match the input field shape.")
+
+    base_shape = np.shape(field)
+    if base_shape[0] != base_shape[1]:
+        raise ValueError("Fresnel lens trains require square field arrays.")
+    computational_size = padded_grid_size(base_shape[0], padding_factor)
+    computational_shape = (computational_size, computational_size)
+
+    if kernels is None:
+        kernels = build_fresnel_lens_kernels(
+            base_shape, grid_side_length, wavelength, stages, rr,
+            lens_radius=lens_radius, padding_factor=padding_factor,
+        )
+    if len(kernels) != len(phase_maps):
+        raise ValueError("The number of kernel sets must match the phase planes.")
+    if any(kernel["lens"].shape != computational_shape for kernel in kernels):
+        raise ValueError(
+            "The supplied kernels do not match the requested padding factor."
+        )
+
+    propagated = center_pad(
+        np.asarray(field, dtype=np.complex128),
+        computational_shape,
+        fill_value=0.0,
+    )
+    # Unity padding makes the extra phase-plate area optically neutral. The
+    # incident field is zero padded, then allowed to diffract throughout the
+    # larger window instead of wrapping around its original FFT boundary.
+    padded_phase_maps = [
+        center_pad(phase_map, computational_shape, fill_value=1.0+0.0j)
+        for phase_map in phase_maps
+    ]
+    intermediate = []
+    for phase_map, stage_kernels in zip(padded_phase_maps, kernels):
+        propagated = propagated*phase_map
+        after_phase = propagated
+        propagated = _propagate_with_kernel(propagated, stage_kernels["before"])
+        before_lens = propagated
+        propagated = propagated*stage_kernels["lens"]
+        after_lens = propagated
+        propagated = _propagate_with_kernel(propagated, stage_kernels["after"])
+        if return_intermediate:
+            intermediate.append({
+                "after_phase": after_phase,
+                "before_lens": before_lens,
+                "after_lens": after_lens,
+                "stage_output": propagated,
+            })
+
+    output = propagated if return_padded else center_crop(propagated, base_shape)
+    if return_intermediate:
+        return output, intermediate
+    return output
 
 
 # Pupil function which we convolve with the outgoing field 
@@ -287,7 +571,8 @@ def output_chan_triangle(X, Y, rad_spot, maxx, chan_sep=1.0):
 
 # This creates channel spots arranged evenly on a circle
 
-def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0):
+def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0,
+                       coordinate_mode="legacy"):
     
     """
     Place `num_of_spots` pupil apertures evenly spaced on a circle of radius
@@ -321,52 +606,19 @@ def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0):
 
     fields = np.empty((num_of_spots, N, N), dtype=np.complex128)
 
-    for ii in range(num_of_spots):
-        X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
-        Y_shifted = np.linspace(-maxx, maxx, N) + spot_loc_y[ii]
-        h = np.abs(X_shifted[1] - X_shifted[2])
-        xx, yy = np.meshgrid(X_shifted, Y_shifted)
-        r, phi = cart2pol(xx, yy)
+    if coordinate_mode not in {"legacy", "physical"}:
+        raise ValueError("coordinate_mode must be 'legacy' or 'physical'.")
 
-        fields[ii] = pupil_function(r, rad_spot)
-
-    return fields
-
-
-# This creates channel spots arranged evenly on a circle
-
-def output_chan_circle(X, Y, rad_spot, maxx, num_of_spots, circle_radius=1.0):
-    """
-    Place `num_of_spots` pupil apertures evenly spaced on a circle of radius
-    `circle_radius` (in mm) centered at the origin.
-
-    Parameters
-    ----------
-    X, Y : ndarray
-        Base coordinate vectors (only the length is used to infer grid size).
-    rad_spot : float
-        Radius of each pupil aperture.
-    maxx : float
-        Half-width of the numerical window used to build the meshgrid.
-    num_of_spots : int
-        Number of channels to place on the circle.
-    circle_radius : float, optional
-        Circle radius in millimeters. Default is 1.0 mm.
-
-    Returns
-    -------
-    fields : ndarray
-        Array of shape (num_of_spots, N, N) containing the pupil masks.
-    """
-
-    N = len(X)
-
-    # Compute centers on a circle (convert radius to meters via mm constant)
-    angles = np.linspace(0, 2 * np.pi, num_of_spots, endpoint=False)
-    spot_loc_x = circle_radius * mm * np.cos(angles)
-    spot_loc_y = circle_radius * mm * np.sin(angles)
-
-    fields = np.empty((num_of_spots, N, N), dtype=np.complex128)
+    if coordinate_mode == "physical":
+        # The output plane of the Fresnel TF propagator has the same coordinate
+        # sampling as the input plane. Build the pupils directly on that grid.
+        xx, yy = np.meshgrid(np.asarray(X), np.asarray(Y))
+        for ii, (center_x, center_y) in enumerate(zip(spot_loc_x, spot_loc_y)):
+            shifted_radius = np.sqrt(
+                (xx-center_x)**2 + (yy-center_y)**2
+            )
+            fields[ii] = pupil_function(shifted_radius, rad_spot)
+        return fields
 
     for ii in range(num_of_spots):
         X_shifted = np.linspace(-maxx, maxx, N) + spot_loc_x[ii]
@@ -511,7 +763,18 @@ def norm_field(field,h):
 # This function computes the shannon entropy in d-dimensions 
 
 def shannon_entropy(x,d):
-    return (-x*np.log2(x/(d-1)) - (1-x)*np.log2(1-x))
+    """d-dimensional Shannon entropy with well-defined endpoint limits."""
+    x = float(np.clip(x, 0.0, 1.0))
+    if d < 2:
+        raise ValueError("The alphabet dimension d must be at least 2.")
+
+    error_term = 0.0 if x == 0 else -x*np.log2(x/(d-1))
+    correct_probability = 1-x
+    correct_term = (
+        0.0 if correct_probability == 0
+        else -correct_probability*np.log2(correct_probability)
+    )
+    return error_term+correct_term
 
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 

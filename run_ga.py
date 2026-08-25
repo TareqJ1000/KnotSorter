@@ -1,705 +1,605 @@
 # -*- coding: utf-8 -*-
-"""
-Created on Thu Jan 25 14:15:29 2024
+"""Optimize one-, two-, or three-plane phase sorters for optical knots.
 
-@author: tjaou104
+The preferred architecture explicitly propagates each field through
+
+    phase plate -> free space -> thin lens -> free space
+
+for every phase plane. The free-space distances and focal lengths may be fixed
+or appended to the genetic chromosome as bounded optimization parameters. A
+legacy FFT architecture remains available for existing masks and configurations.
 """
 
-import numpy as np 
-import scipy as sp
-from scipy import ndimage
-import pygad
-import yaml 
 import argparse
-from yaml import Loader 
+import ast
+from pathlib import Path
 import pickle as pkl
 
-from optical_functions import LG, propFF, propTF, cart2pol, oamModes, output_chan, output_chan_symmetric, output_chan_triangle, output_chan_circle, setKnotType, norm_field, shannon_entropy
-from scipy.fft import ifft2, ifftshift, fft2, fftshift
+import matplotlib.pyplot as plt
+import numpy as np
+import pygad
+import scipy as sp
+import yaml
+from scipy.fft import fft2, fftshift, ifft2, ifftshift
 
-import matplotlib.pyplot as plt 
+from optical_functions import (
+    LG,
+    build_fresnel_lens_kernels,
+    cart2pol,
+    fresnel_sampling_diagnostics,
+    norm_field,
+    oamModes,
+    output_chan_circle,
+    padded_grid_size,
+    propFF,
+    propTF,
+    propagate_fresnel_lens_train,
+    setKnotType,
+    shannon_entropy,
+)
+from sorter_configuration import parse_optical_train_config
 
-#from diffractsim import cm, mm, um 
-import os
 
-# physical constants
+CM = 1e-2
+MM = 1e-3
+UM = 1e-6
+NM = 1e-9
 
-cm = 1e-2
-mm = 1e-3
-um = 1e-6 
-nm = 1e-9
 
-# Remove if used outside of the cluster 
+def _number(value):
+    """Parse historical numeric strings without using eval()."""
+    if isinstance(value, str):
+        return ast.literal_eval(value)
+    return value
 
-parser=argparse.ArgumentParser(description='test')
-parser.add_argument('--ii', dest='ii', type=int,
-    default=None, help='')
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--ii", type=int, default=None,
+                    help="Load configs/ga<ii>.yaml (gaNone.yaml when omitted).")
+parser.add_argument("--config", type=Path,
+                    help="Load an explicit YAML file instead of configs/ga<ii>.yaml.")
+parser.add_argument("--validate-only", action="store_true",
+                    help="Build the optical system, print diagnostics, and exit.")
 args = parser.parse_args()
-shift = args.ii
 
-# *** OMIT IN CLUSTER 
+if args.config is not None:
+    config_path = args.config
+else:
+    config_name = "gaNone.yaml" if args.ii is None else f"ga{args.ii}.yaml"
+    config_path = Path("configs")/config_name
 
-# shift = 5
+with config_path.open("r", encoding="utf-8") as stream:
+    cnfg = yaml.safe_load(stream)
 
-# *** OMIT IN CLUSTER
+# Backward-compatible defaults for archived configurations.
+cnfg.setdefault("circle_radius", 1.5)
+cnfg.setdefault("fitness_func", "secret_key")
+cnfg.setdefault("alpha", 1.0)
+cnfg.setdefault("gamma", 1.0)
+cnfg.setdefault("keep_elitism", 1)
+cnfg.setdefault("random_mutation_min_val", -1.0)
+cnfg.setdefault("random_mutation_max_val", 1.0)
+cnfg.setdefault("pixel_pitch_um", 20.0)
+cnfg.setdefault("wavelength_nm", 780.0)
+cnfg.setdefault("random_seed", None)
 
-# This function keeps track of the generation number + best fitness
 
-# Load configuration file
+# ---------------------------------------------------------------------------
+# Field, mode, and optical-system configuration
+# ---------------------------------------------------------------------------
 
-stream = open(f"configs/ga{shift}.yaml", 'r')
-cnfg = yaml.load(stream, Loader=Loader)
+N = int(cnfg["dim"])
+num_of_output_chans = int(cnfg["num_output_chans"])
+output_chan_width = float(cnfg["output_chan_width"])*MM
+channel_sep = float(cnfg["channel_sep"])
+circle_radius = float(cnfg["circle_radius"])
 
-# Backward compatibility: supply defaults for new config keys
-cnfg.setdefault('circle_radius', 1.5)  # mm, used for circular output channel layouts
-cnfg.setdefault('fitness_func', 'secret_key' ) 
-cnfg.setdefault('alpha', 1.0) # This controls whether we choose the worst performing channel as a bottleneck for our function or no
-# at alpha=1.0, we recover our old fitness function behavior             
-cnfg.setdefault('gamma', 1.0) # This controls the influence of the determinant of the crosstalk determinant
+LG_modes = cnfg["LG_modes"]
+w0 = float(cnfg["w0"])*MM
+isKnot = bool(cnfg["isKnot"])
+knotType = cnfg["knotType"]
+shapeParams = cnfg["shapeParams"]
 
-''' 
-Global/Optimization Parameters 
-'''
+num_phase_maps_near = int(cnfg.get("num_phase_maps_near", 0))
+num_phase_maps_far = int(cnfg.get("num_phase_maps_far", 0))
+num_of_phase_maps = int(
+    cnfg.get("num_phase_planes", num_phase_maps_near+num_phase_maps_far)
+)
+if not 1 <= num_of_phase_maps <= 3:
+    raise ValueError("The sorter supports one, two, or three phase planes.")
 
-N = cnfg['dim']
-num_of_output_chans = cnfg['num_output_chans']
-output_chan_width = cnfg['output_chan_width'] * mm # in mm 
-channel_sep = cnfg['channel_sep'] 
-circle_radius = cnfg['circle_radius']
+optical_train = parse_optical_train_config(cnfg, num_of_phase_maps)
 
-# Some parameters specifying the LG modes
+# Legacy propagation settings.
+simulateLens = bool(cnfg.get("simulateLens", False))
+fourier_lens = float(cnfg.get("fourier_length", 10.0))*CM
+multiPhaseLens = bool(cnfg.get("multiPhaseLens", False))
+multiPhase = bool(cnfg.get("multiPhase", False))
+z_o = float(cnfg.get("z_o", 30.0))*CM
 
-LG_modes = cnfg['LG_modes']
-w0 = cnfg['w0'] * mm # in mm!!
+rot_angle = float(_number(cnfg.get("rot_angle", "0")))
+fixedRotation = bool(cnfg.get("fixedRotation", True))
+randomRotation = bool(cnfg.get("randomRotation", False))
 
-isKnot = cnfg['isKnot']
-knotType = cnfg['knotType']
-shapeParams = cnfg['shapeParams']
+wavelength = float(cnfg["wavelength_nm"])*NM
+k = 2*np.pi/wavelength
+pixel_pitch = float(cnfg["pixel_pitch_um"])*UM
+grid_side_length = pixel_pitch*N
+h = pixel_pitch
 
-simulateLens = cnfg['simulateLens'] # Do we simulate the phase effects of our lenses, or do we neglect them and take the fourier and inverse fourier transform? 
-fourier_lens = cnfg['fourier_length']*cm # fourier length of both lens in cm
+X = pixel_pitch*(np.arange(N)-N//2)
+Y = pixel_pitch*(np.arange(N)-N//2)
+xx, yy = np.meshgrid(X, Y)
+r, phi = cart2pol(xx, yy)
 
-multiPhaseLens = cnfg['multiPhaseLens'] # Enables multiple phase screens in the near field and the far field. 
-multiPhase = cnfg['multiPhase'] # Enables a simplified experiment where we propagate the knot through multiple phase modulations. Does not involve a lens
-
-# Settings specific for the Multi-Phase Experiment
-
-num_phase_maps_near = cnfg['num_phase_maps_near']  # Number of phase maps in the near field
-num_phase_maps_far = cnfg['num_phase_maps_far'] # Number of phase maps in the far field
-z_o = cnfg['z_o']*cm # Distance between successive phase maps (if applicable). We use Fresnel propagation
-
-# Determine total number of phase maps 
-
-num_of_phase_maps = num_phase_maps_near + num_phase_maps_far
-
-# Settings specific for rotating the incident field
-
-rot_angle = eval(cnfg['rot_angle'])
-fixedRotation = cnfg['fixedRotation']
-randomRotation = cnfg['randomRotation']
-
-GFilterStrength = cnfg['gauss_filter_sigma'] # sigma parameter for the gaussian filter .. apply to initial population and in computing the fitness param. 
-
-'''
-GA Parameters
-'''
-
-num_generations = int(eval(cnfg['num_of_gens']))
-gen_start = int(eval(cnfg['gen_start'])) # Number of generations for the initial population
-
-num_parents_mating = cnfg['parents_mating']
-
-sol_per_pop = cnfg['sol_per_pop'] # number of parents in the population?? 
-num_genes = num_of_phase_maps*N**2 # This would refer to the number of parameters in our DNA
-
-# Lower and upper-bound ranges of the parameterization. 
-
-init_range_low = -np.pi
-init_range_high = np.pi
-
-parent_c = cnfg['parent_c'] # the scaling parameter for exponential decay
-parent_k = cnfg['parent_k'] # controls the peak of the probability distribution
-
-crossover_type = "single_point"
-crossover_probability = cnfg['crossover_prob'] # We keep the solution untouched to the next gen if RNG is <= this number
-
-mutation_type = cnfg['mutation_type']
-mutation_probability = eval(cnfg['mutation_prob']) # probability of mutation (if the mutation type is adaptive, must be a tuple in (high probability, low probability))
-# mutation_percent_genes = cnfg['mutation_percent'] # Percentage of genes to mutate. This parameter actually does nothing
-
-random_mutation_min_val = -cnfg['random_mutation_min_val']*np.pi 
-random_mutation_max_val = cnfg['random_mutation_max_val']*np.pi 
-
-gen_saturate = cnfg['gen_saturate']
-
-keep_elitism = cnfg['keep_elitism']
-
-fitness_function = cnfg['fitness_func']
-alpha = cnfg['alpha']
-gamma = cnfg['gamma']
-
-last_pop = 0
-
-'''
-Define the initial field 
-'''
-
-# Define the coordinate space 
-
-la = 0.78*um
-k=(2*np.pi)/la  # [m^-1] wavenumber    
-N=128 # [Number of points per dimension]
-maxx = 20*um*N # Full length of the numerical window in terms of the usual length of SLM macropixels (m)
-
-# Space definition 
-dx = maxx/N
-dy = maxx/N 
-
-#okay let's just say h here is dx or dy for now WLOG (WITH ... loss of generality)
-h = dx
-
-X = dx*(np.arange(N) - N //2)
-Y = dy*(np.arange(N) - N //2)
-
-xx,yy=np.meshgrid(X,Y)
-r, phi= cart2pol(xx,yy)
-
-''' 
-Create the OAM beams that we need to sort 
-'''
-# Now create a list containing 'oamMode' objects 
+output_chans = output_chan_circle(
+    X, Y, output_chan_width, grid_side_length, num_of_output_chans,
+    circle_radius=circle_radius,
+    coordinate_mode=optical_train.output_coordinate_mode,
+)
 
 list_of_OAMs = []
-
-output_chans = output_chan_circle(X, Y, output_chan_width, maxx, num_of_output_chans, circle_radius=circle_radius)
-
-
-if(isKnot):
-    for ii in range(len(knotType)):
-        list_of_OAMs.append(oamModes(setKnotType(r, phi, w0, knotType[ii], shapeParams[ii]), output_chans[ii]))
-        
+if isKnot:
+    if len(knotType) != num_of_output_chans:
+        raise ValueError("The knot alphabet and output-channel count must match.")
+    for knot_name, parameters, channel in zip(knotType, shapeParams, output_chans):
+        list_of_OAMs.append(oamModes(
+            setKnotType(r, phi, w0, knot_name, parameters), channel
+        ))
 else:
-    for ii in range(len(LG_modes)):
-        list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
+    if len(LG_modes) != num_of_output_chans:
+        raise ValueError("The LG alphabet and output-channel count must match.")
+    for (ell, radial_index), channel in zip(LG_modes, output_chans):
+        list_of_OAMs.append(oamModes(
+            LG(r, phi, ell, radial_index, w0, h, 0, k), channel
+        ))
 
 
-# NEW! We define a function which computes the rotated knotted field.
-# We assume that we have pre-defined the parameters making up the knotted field. 
-# Bad practice, I know. 
+def create_rotated_modes(rotation_angle):
+    """Recreate the complete input alphabet on rotated coordinates."""
+    xx_rot = np.cos(rotation_angle)*xx-np.sin(rotation_angle)*yy
+    yy_rot = np.sin(rotation_angle)*xx+np.cos(rotation_angle)*yy
+    r_rot, phi_rot = cart2pol(xx_rot, yy_rot)
 
-def create_rotated_knots(rot_phi):
-    
-    # Apply rotation operator on coords. Update: The rotation should be 
-    # X_rot = np.cos(rot_phi)*X - np.sin(rot_phi)*Y
-    # Y_rot = np.sin(rot_phi)*X + np.cos(rot_phi)*Y
-
-    xx,yy=np.meshgrid(X ,Y);
-    
-    xx_rot = np.cos(rot_phi)*xx - np.sin(rot_phi)*yy
-    yy_rot = np.sin(rot_phi)*xx + np.cos(rot_phi)*yy
-
-    r, phi= cart2pol(xx_rot,yy_rot)
-
-    ''' 
-    Create the OAM beams that we need to sort 
-    '''
-    # Now create a list containing 'oamMode' objects 
-
-    list_of_OAMs = []
-
-    if(isKnot):
-        for ii in range(len(knotType)):
-            field = setKnotType(r, phi, w0, knotType[ii], shapeParams[ii])
-            list_of_OAMs.append(oamModes(field, output_chans[ii]))
+    rotated = []
+    if isKnot:
+        for knot_name, parameters, channel in zip(
+                knotType, shapeParams, output_chans):
+            rotated.append(oamModes(
+                setKnotType(r_rot, phi_rot, w0, knot_name, parameters), channel
+            ))
     else:
-        for ii in range(len(LG_modes)):
-            list_of_OAMs.append(oamModes(LG(r, phi, LG_modes[ii][0], LG_modes[ii][1], w0,h,0,k), output_chans[ii]))
-    
-    
-    #plt.imshow(np.angle(list_of_OAMs[0].oamBeam))
-    #plt.show()
-    #input()
-    return list_of_OAMs
+        for (ell, radial_index), channel in zip(LG_modes, output_chans):
+            rotated.append(oamModes(
+                LG(r_rot, phi_rot, ell, radial_index, w0, h, 0, k), channel
+            ))
+    return rotated
 
 
-# NEW: apply rotation onto the incident field
-#print("yep")
-#list_of_rotated_OAMs = create_rotated_knots(rot_angle)
-#print("okay")
-    
-'''
-We run this at the end of every generation. Here, we save the best parameters after every generation
-'''
+# ---------------------------------------------------------------------------
+# Genetic representation: phase pixels followed by normalized geometry genes
+# ---------------------------------------------------------------------------
 
-def on_gen(ga_instance):
-    print(np.shape(ga_instance.population))
-    print("Generation : ", ga_instance.generations_completed)
-    print("Fitness of the best solution :", ga_instance.best_solution()[1])
-    solution =  ga_instance.best_solution()[0]
-    # Checkpoint current best phase patterns. 
-    
-    ga_instance_name = cnfg['ga_instance']
-    
-    # Create the phase map(s) by reshaping the solution array
-    
-    phase_maps = np.empty((num_of_phase_maps, N, N))
-    
-    for ii in range(num_of_phase_maps):
-        # Reshape and apply filter to solutions 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
-        # Apply gaussian filter 
-        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        phase_maps[ii] = temp
+GFilterStrength = float(cnfg["gauss_filter_sigma"])
+gaussian_filter_sigma_pixels = float(
+    cnfg.get("gaussian_filter_sigma_pixels", grid_side_length*GFilterStrength)
+)
 
-    # Create best_phases  and ga_instance directory if it doesn't exist
-    if not os.path.exists("best_phases"):
-        os.makedirs("best_phases")
-    
-    if not os.path.exists("genetic_instances"):
-        os.makedirs("genetic_instances")
-    
-    with open(f"best_phases/{ga_instance_name}.pkl", 'wb') as file:
-        pkl.dump(phase_maps, file)
-    
-    ga_instance.save(filename=f'genetic_instances/{ga_instance_name}')
+phase_gene_count = num_of_phase_maps*N**2
+num_genes = phase_gene_count+optical_train.num_geometry_genes
 
-    # Create new directory to save the plots (if it doesn't already exist)
-    
-    if not os.path.exists(f"plots/{ga_instance_name}"):
-        os.makedirs(f"plots/{ga_instance_name}")
-    
-    # Save plot every 100 generations 
-    
-    if (ga_instance.generations_completed % 1000 == 0):
-        plt.figure()
-        plt.plot(ga_instance.best_solutions_fitness)
-        plt.savefig(f"plots/{ga_instance_name}/fitness_{ga_instance.generations_completed}.jpg")
-        plt.show()
-        
-        
-def compute_sorting_performance(phase_maps, list_of_OAMs, alpha=1.0):
 
-    # Make the dimensionality of our sorting in terms of # of modes
-    d = len(list_of_OAMs)
-    
-    # Now, this is the fitness parameter 
-    #sorting_performance = 0
-    sorting_performance = np.zeros(d)
+def decode_solution(solution):
+    """Decode a chromosome into smoothed phase masks and physical geometry."""
+    phase_angles = np.empty((num_of_phase_maps, N, N), dtype=float)
+    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
+    for index in range(num_of_phase_maps):
+        start = index*N**2
+        stop = (index+1)*N**2
+        angle = np.reshape(solution[start:stop], (N, N))
+        angle = sp.ndimage.gaussian_filter(
+            angle, sigma=gaussian_filter_sigma_pixels
+        )
+        phase_angles[index] = angle
+        phase_maps[index] = np.exp(1j*angle)
 
-    # Actually, let's introduce the crosstalk matrix 
-    crosstalk_matrix = np.zeros((num_of_output_chans, num_of_output_chans))
-    
-    # Let's introduce the secret key rate here, actually. 
-    secret_key = 0
+    geometry_genes = solution[phase_gene_count:]
+    stages = optical_train.decode_geometry(geometry_genes)
+    return phase_angles, phase_maps, stages
 
-    for ii in range(d):
 
-        # Define initial OAM field and correct output channel 
+def propagate_legacy(field, phase_maps):
+    """Preserve the original FFT/multi-plane behavior for old configurations."""
+    field_mod_1 = field*phase_maps[0]
 
-        field = list_of_OAMs[ii].oamBeam 
-        
-        # Do a proper normalization on the incident field 
-        
-        field = norm_field(field,h)
-        
-        # Compute the initial field intensity. This will be important for later
-        
-        int_knot = np.sum(np.abs(field)**2)
-    
-        # modulate the field by the first phase map 
+    if multiPhase:
+        field_after = field_mod_1
+        for phase_map in phase_maps[1:]:
+            field_after = propTF(
+                field_after, grid_side_length, wavelength, z_o
+            )*phase_map
+        return propTF(field_after, grid_side_length, wavelength, z_o)
 
-        field_mod_1 = field*phase_maps[0]
+    if multiPhaseLens:
+        field_after = field_mod_1
+        for index in range(1, num_phase_maps_near):
+            field_after = propTF(
+                field_after, grid_side_length, wavelength, z_o
+            )*phase_maps[index]
+        field_lens = fftshift(fft2(field_after))
+    elif simulateLens:
+        field_lens, _ = propFF(
+            field_mod_1, grid_side_length, wavelength, fourier_lens
+        )
+    else:
+        field_lens = fftshift(fft2(field_mod_1))
 
-        # Proceed with our chosen experiment
+    if num_phase_maps_far == 0:
+        return field_lens
 
-        # Case 1: We are doing the experiment without any lenses
+    field_after_2 = field_lens*phase_maps[num_phase_maps_near]
+    if multiPhaseLens:
+        for index in range(num_phase_maps_near+1, num_of_phase_maps):
+            field_after_2 = propTF(
+                field_after_2, grid_side_length, wavelength, z_o
+            )*phase_maps[index]
+        return ifft2(ifftshift(field_after_2))
+    if simulateLens:
+        field_lens_2, _ = propFF(
+            field_after_2, grid_side_length, wavelength, fourier_lens
+        )
+        return field_lens_2
+    return ifft2(ifftshift(field_after_2))
 
-        if (multiPhase): # Propagate the field by a distance z_o and apply the second phase screen
-            field_after = field_mod_1
 
-            for jj in range(1, len(phase_maps)):
-                # Propagate the beam by a distance z_o
-                field_after = propTF(field_after, maxx, la, z_o)
+def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
+    """Return balanced contrast, efficiency matrix, key rate, and probabilities."""
+    if alpha is None:
+        alpha = float(cnfg["alpha"])
+    d = len(input_modes)
+    if d < 2:
+        raise ValueError("Sorting requires at least two input modes.")
 
-                # Apply the next phase map (if applicable)
-                field_after = field_after*phase_maps[jj]
+    efficiency_matrix = np.zeros((d, num_of_output_chans), dtype=float)
+    kernels = None
+    if optical_train.model == "fresnel_lens_train":
+        kernels = build_fresnel_lens_kernels(
+            (N, N), grid_side_length, wavelength, stages, r,
+            lens_radius=optical_train.lens_aperture_radius,
+            padding_factor=optical_train.padding_factor,
+        )
 
-            # Propagate the beam one final time and observe the final field
+    for input_index, input_mode in enumerate(input_modes):
+        field = norm_field(input_mode.oamBeam, h)
+        input_power = np.sum(np.abs(field)**2)
 
-            final_field = propTF(field_after, maxx, la, z_o)
+        if optical_train.model == "fresnel_lens_train":
+            final_field = propagate_fresnel_lens_train(
+                field, phase_maps, grid_side_length, wavelength, stages, r,
+                lens_radius=optical_train.lens_aperture_radius,
+                kernels=kernels,
+                padding_factor=optical_train.padding_factor,
+            )
+        else:
+            final_field = propagate_legacy(field, phase_maps)
+            # The unscaled FFT legacy path is normalized to preserve its former
+            # interpretation. Fresnel propagation is already power preserving;
+            # importantly, it retains real loss from a finite lens pupil.
+            final_field = norm_field(final_field, h)
 
-        else: # Case 2: We are computing the experiment with the lens 
+        final_intensity = np.abs(final_field)**2
+        for output_index, channel in enumerate(output_chans):
+            efficiency_matrix[input_index, output_index] = np.real(
+                np.sum(final_intensity*channel)/input_power
+            )
 
-            if (multiPhaseLens): # Multi-phase experiment with the lens
-                field_after = field_mod_1
+    accepted_power = efficiency_matrix.sum(axis=1, keepdims=True)
+    assignment_matrix = np.divide(
+        efficiency_matrix,
+        accepted_power,
+        out=np.zeros_like(efficiency_matrix),
+        where=accepted_power > 0,
+    )
 
-                for kk in range(1, num_phase_maps_near):
-                    # Propagate the beam by a distance z_o 
-                    field_after = propTF(field_after, maxx, la, z_o)
-                    # Apply the next phase map in the near field (if applicable)
-                    field_after = field_after*phase_maps[kk]
-                
-                # Fourier transform the beam into the far field
-                field_lens = fftshift(fft2(field_after))
+    correct = np.diag(assignment_matrix)
+    incorrect_mean = (
+        assignment_matrix.sum(axis=1)-correct
+    )/(d-1)
+    channel_contrast = correct-incorrect_mean
+    balanced_contrast = (
+        alpha*np.min(channel_contrast)
+        +(1-alpha)*np.mean(channel_contrast)
+    )
 
-            elif (simulateLens): # We simulate Faunhofer Diffraction for a more accurate representation of lens propagation
-                field_lens, _ = propFF(field_mod_1,maxx,la,fourier_lens)
-        
-            
-            else: # Compute the field at the front focal plane of the lens
-                 field_lens = fftshift(fft2(field_mod_1))
-        
-            # What happens next depends on whether we have one or two phase maps
-        
-            if (num_phase_maps_far==0):
-                # Compute the field intensity 
-                final_field = field_lens
-        
-            else:
-                # Modulate the field by the first far field map
-                field_mod_2 = field_lens*phase_maps[num_phase_maps_near]
-                if (multiPhaseLens):
-                    field_after_2 = field_mod_2
-                    
-                    for ll in range(1+num_phase_maps_near, num_of_phase_maps):
-                        # Propagate the beam 
-                        field_after_2 = propTF(field_after_2, maxx, la, z_o)
-                        # Apply phase to beam 
-                        field_after_2 = field_after_2*phase_maps[ll]
-            
-                 # Apply inverse fourier transform onto beam
-                    field_lens_2 = ifft2(ifftshift(field_after_2))
+    symbol_error = 1-np.mean(correct)
+    secret_key = max(
+        0.0,
+        np.log2(d)-2*shannon_entropy(symbol_error, d),
+    )
+    return balanced_contrast, efficiency_matrix, secret_key, assignment_matrix
 
-                 # simulate the lens field again. This is the final field. 
-                elif (simulateLens):
-                    field_lens_2, _ = propFF(field_mod_2, maxx, la, fourier_lens)
-                else: 
-                    field_lens_2 = ifft2(ifftshift(field_mod_2))
 
-                final_field = field_lens_2
-        
-        # We normalize the final field and compute the intensity 
-        final_field = norm_field(final_field,h)
-        final_field_int = np.abs(final_field)**2
-        
-        # Define full set of indices, as you would summing through a for loop
-        full_index = np.arange(len(output_chans))   
-        # Delete ii from the list of full_index, creating a new temporary array
-        temp_index = np.delete(full_index, ii)
-        # Sum up the "incorrect" channels 
-        incorrect_chans = 0
-        # New: to construct our crosstalk matrix, let's store the individual intensities
-        incorrect_chan_ints = []
-        
-        for ind in temp_index:
-            field_in_pupil = final_field_int*output_chans[ind]
-            incorrect_chan_ints.append(np.sum(field_in_pupil)/int_knot)
-            incorrect_chans += np.sum(field_in_pupil)/int_knot
-            
-        # Now, evaluate the sorting performance 
-        correct_chans = np.sum(final_field_int*output_chans[ii])/int_knot # normalization is mode-specific
-        sorting_performance[ii] = correct_chans - incorrect_chans
-        
-        # Compute the detector effeciency 
+def _rotation_angle_for_fitness():
+    if randomRotation:
+        return np.random.uniform(0, 2*np.pi)
+    if fixedRotation:
+        return rot_angle
+    return 0.0
 
-        detect_eff = correct_chans 
-        crosstalk_matrix[ii,ii] = detect_eff 
-        
-        # Compute the crosstalk matrix. For more than two modes, we have to be a bit more meticulous with our approach. 
-        
-        for jj, ind in enumerate(temp_index):
-            crosstalk_eff = incorrect_chan_ints[jj]
-            crosstalk_matrix[ii, ind] = crosstalk_eff
-
-    # Compute the "QBER" using the off-diagonals of the crosstalk matrix 
-    qber = ((d-1)/d**2)*(crosstalk_matrix.sum() - np.trace(crosstalk_matrix)) # This bounds the qber to 1, in principle
-
-    # Compute the secret key rate
-    secret_key = np.log2(d) - 2*shannon_entropy(qber,d)
-
-    # NEW: We keep track of the per-channel sorting performance
-    # alpha is a hyperparameter which adjusts the weight between the minimum and the sum of sorting performances across each channel. 
-    # At alpha=0.0, we recover the old behavior, while at alpha=1.0, we consider the minimum
-    
-    overall_sort_perf = alpha*np.min(sorting_performance) + ((1-alpha)/d)*np.sum(sorting_performance)
-
-    return overall_sort_perf, crosstalk_matrix, secret_key
-    
-'''
-This computes the fitness function that we use to improve the GA. We can adapt this to one or two phase maps
-'''
 
 def fitness_func_sorting(ga_instance, solution, solution_idx):
-    
-    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
-        rotation_angle = np.random.uniform(0, 2*np.pi)
-    else: 
-        rotation_angle = rot_angle
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
-    
-    # NEW: apply rotation onto the incident field
-    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
-
-    for ii in range(num_of_phase_maps):
-        # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
-        # Apply gaussian filter 
-        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        phase_maps[ii] = np.exp(1j*temp)
-    
-    # Compute sorting performance 
-    sorting_performance,*_ = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
-    #print(sorting_performance)
-    
-    return np.real(sorting_performance)
-
-def fitness_func_crosstalk(ga_instance, solution, solution_idx):
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
-
-    for ii in range(num_of_phase_maps):
-        # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
-        # Apply gaussian filter 
-        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        phase_maps[ii] = np.exp(1j*temp)
-    
-    # Compute sorting performance 
-    sorting_performance, crosstalk_matrix, _ = compute_sorting_performance(phase_maps)
-    
-    # Product of the sorting performance w/ determinant of the crosstalk matrix makes up our new metric. 
-    crosstalk_neo = sorting_performance*np.linalg.det(crosstalk_matrix)
-
-    return np.real(crosstalk_neo)
+    _, phase_maps, stages = decode_solution(solution)
+    input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+    sorting_performance, *_ = compute_sorting_performance(
+        phase_maps, input_modes, stages
+    )
+    return float(np.real(sorting_performance))
 
 
-def fitness_func_secretKey(ga_instance, solution, solution_idx):
-    
-    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
-        rotation_angle = np.random.uniform(0, 2*np.pi)
-    elif (fixedRotation):
-        rotation_angle = rot_angle
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
-    
-    # NEW: apply rotation onto the incident field
-    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
-
-    for ii in range(num_of_phase_maps):
-        # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
-        # Apply gaussian filter 
-        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        phase_maps[ii] = np.exp(1j*temp)
-    
-    # Compute sorting performance 
-    sorting_performance, _, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
-    
-    sorting_performance_neo = sorting_performance*secret_key
-    
-    return np.real(sorting_performance_neo)
+def fitness_func_secret_key(ga_instance, solution, solution_idx):
+    _, phase_maps, stages = decode_solution(solution)
+    input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+    sorting_performance, _, secret_key, _ = compute_sorting_performance(
+        phase_maps, input_modes, stages
+    )
+    return float(np.real(sorting_performance*secret_key))
 
 
-def fitness_func_secretKey_crosstalk(ga_instance, solution, solution_idx):
+def fitness_func_full(ga_instance, solution, solution_idx):
+    _, phase_maps, stages = decode_solution(solution)
+    input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+    sorting_performance, _, secret_key, assignment_matrix = (
+        compute_sorting_performance(phase_maps, input_modes, stages)
+    )
+    distinguishability = abs(np.linalg.det(assignment_matrix))**float(cnfg["gamma"])
+    return float(np.real(sorting_performance*secret_key*distinguishability))
 
-    if (randomRotation): # Instead of a fixed rotation, sample a random rotation angle from a uniform distribution. 
-        rotation_angle = np.random.uniform(0, 2*np.pi)
-    elif (fixedRotation):
-        rotation_angle = rot_angle
-    
-    # Create the phase map(s) by reshaping the solution array
-    phase_maps = np.empty((num_of_phase_maps, N, N), dtype=np.complex128)
-    
-    # NEW: apply rotation onto the incident field
-    list_of_rotated_OAMs = create_rotated_knots(rotation_angle)
-    
-    for ii in range(num_of_phase_maps):
-        # Reshape solution to phase map 
-        temp = np.reshape(solution[(ii)*N**2:(ii+1)*N**2], shape=(N,N))
-        # Apply gaussian filter 
-        temp = sp.ndimage.gaussian_filter(temp, sigma=maxx*GFilterStrength)
-        phase_maps[ii] = np.exp(1j*temp)
-    
-    # Compute sorting performance 
-    sorting_performance, crosstalk_matrix, secret_key = compute_sorting_performance(phase_maps, list_of_rotated_OAMs)
 
-    # NEW: some things to control the influence of the determinant
+# ---------------------------------------------------------------------------
+# Genetic algorithm
+# ---------------------------------------------------------------------------
 
-    # First, normalize the crosstalk matrix row-by-row
-    row_sums = crosstalk_matrix.sum(axis=1, keepdims=True)
-    crosstalk_matrix_norm = crosstalk_matrix/(row_sums + 1e-12) # small factor is to avoid instability
+num_generations = int(float(_number(cnfg["num_of_gens"])))
+gen_start = int(float(_number(cnfg["gen_start"])))
+num_parents_mating = int(cnfg["parents_mating"])
+sol_per_pop = int(cnfg["sol_per_pop"])
+parent_c = float(cnfg["parent_c"])
+parent_k = float(cnfg["parent_k"])
+crossover_type = "single_point"
+crossover_probability = _number(cnfg.get("crossover_prob"))
+mutation_type = cnfg["mutation_type"]
+mutation_probability = _number(cnfg["mutation_prob"])
+if isinstance(mutation_probability, list):
+    mutation_probability = tuple(mutation_probability)
+gen_saturate = int(cnfg["gen_saturate"])
+keep_elitism = int(cnfg["keep_elitism"])
 
-    # Compute the determinant
-    det_c_m = np.abs(np.linalg.det(crosstalk_matrix_norm))**gamma
+phase_mutation_min = float(cnfg["random_mutation_min_val"])*np.pi
+phase_mutation_max = float(cnfg["random_mutation_max_val"])*np.pi
+if phase_mutation_min > phase_mutation_max:
+    raise ValueError("random_mutation_min_val must not exceed max_val.")
 
-    sorting_performance_neo = sorting_performance*secret_key*det_c_m
-    
-    return np.real(sorting_performance_neo)
-    
-# c and k are empirical scaling factors that control the probability distribution. 
-# c determines how well favoured fit individuals are
-# k determines how peaked is the p-dist. 
+mutation_min = np.concatenate((
+    np.full(phase_gene_count, phase_mutation_min),
+    np.zeros(optical_train.num_geometry_genes),
+))
+mutation_max = np.concatenate((
+    np.full(phase_gene_count, phase_mutation_max),
+    np.zeros(optical_train.num_geometry_genes),
+))
+
+rng = np.random.default_rng(cnfg["random_seed"])
+initial_population = np.empty((sol_per_pop, num_genes), dtype=float)
+initial_population[:, :phase_gene_count] = rng.uniform(
+    -np.pi, np.pi, size=(sol_per_pop, phase_gene_count)
+)
+if optical_train.num_geometry_genes:
+    initial_population[:, phase_gene_count:] = rng.uniform(
+        0.0, 1.0,
+        size=(sol_per_pop, optical_train.num_geometry_genes),
+    )
+    # Always seed the YAML's initial physical layout as one candidate.
+    initial_population[0, phase_gene_count:] = (
+        optical_train.initial_normalized_geometry
+    )
+
+
+def mutate_geometry(ga_instance, offspring):
+    """Mutate the small geometry block independently of the phase pixels."""
+    if not optical_train.num_geometry_genes:
+        return offspring
+
+    geometry = offspring[:, phase_gene_count:]
+    mutate = rng.random(geometry.shape) < optical_train.geometry_mutation_probability
+    offsets = rng.uniform(
+        -optical_train.geometry_mutation_scale,
+        optical_train.geometry_mutation_scale,
+        size=geometry.shape,
+    )
+    geometry += mutate*offsets
+    np.clip(geometry, 0.0, 1.0, out=geometry)
+    offspring[:, phase_gene_count:] = geometry
+    return offspring
+
 
 def exp_rank_selection(fitness, num_parents, ga_instance):
-    
-    fitness_sorted = sorted(range(len(fitness)), key=lambda l: fitness[l])
-    fitness_sorted.reverse()
-
-    # Create ranks 
-    ranks = np.arange(1, ga_instance.sol_per_pop+1)
-
-    # Compute probabilities according to exponential selection routine
-    probs = parent_c * (1 - np.exp(-ranks/parent_k))
-    
-    # **CRITICAL: Normalize probabilities to sum to 1**
-    probs = probs / np.sum(probs)
-    
-    probs_start, probs_end, parents = ga_instance.wheel_cumulative_probs(
-        probs=probs.copy(), 
-        num_parents=num_parents
+    """Exponential rank selection with the best individual at rank zero."""
+    order = np.argsort(np.asarray(fitness))[::-1]
+    ranks = np.arange(len(order), dtype=float)
+    probabilities = parent_c*np.exp(-ranks/max(parent_k, 1e-12))
+    probabilities /= probabilities.sum()
+    selected_ranks = rng.choice(
+        len(order), size=num_parents, replace=True, p=probabilities
     )
-    parents_indices = []
-
-    for parent_num in range(num_parents):
-        rand_prob = np.random.rand()
-        selected = False
-        for idx in range(probs.shape[0]):
-            if (rand_prob >= probs_start[idx] and rand_prob < probs_end[idx]):
-                mapped_idx = fitness_sorted[idx]
-                parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
-                parents_indices.append(mapped_idx)
-                selected = True
-                break
-        
-        # **Safety check: if no bin selected, choose best individual**
-        if not selected:
-            mapped_idx = fitness_sorted[0]
-            parents[parent_num, :] = ga_instance.population[mapped_idx, :].copy()
-            parents_indices.append(mapped_idx)
-                
-    return parents, np.array(parents_indices)
+    selected_indices = order[selected_ranks]
+    parents = ga_instance.population[selected_indices].copy()
+    return parents, selected_indices
 
 
-# In principle, we would save the last population of the previous GA instance, then rerun a second GA using this population as the starting one 
+last_pop = None
+
 
 def on_stop(ga_instance, last_population_fitness):
-    print("Initial optimization done, saving last population...")
-    global last_pop 
-    last_pop = ga_instance.population 
-    
+    global last_pop
+    last_pop = ga_instance.population.copy()
 
-print("Beginning optimization...") 
 
-# Print experiment configuration details
+def on_gen(ga_instance):
+    solution, fitness, _ = ga_instance.best_solution()
+    phase_angles, _, stages = decode_solution(solution)
+    instance_name = cnfg["ga_instance"]
 
-print("\n" + "="*80)
-print("EXPERIMENT CONFIGURATION")
-print("="*80)
+    Path("best_phases").mkdir(exist_ok=True)
+    Path("genetic_instances").mkdir(exist_ok=True)
+    plot_dir = Path("plots")/instance_name
+    plot_dir.mkdir(parents=True, exist_ok=True)
 
-# Determine experiment type
-if multiPhaseLens:
-    experiment_type = "Multi-Phase Experiment WITH Lenses"
-    print(f"Experiment Type: {experiment_type}")
-    print(f"  - Number of phase screens in near field: {num_phase_maps_near}")
-    print(f"  - Number of phase screens in far field: {num_phase_maps_far}")
-    print(f"  - Distance between phase screens (z_o): {z_o/cm:.2f} cm")
-    print(f"  - Fourier lens length: {fourier_lens/cm:.2f} cm")
-elif multiPhase:
-    experiment_type = "Multi-Phase Experiment (No Lenses)"
-    print(f"Experiment Type: {experiment_type}")
-    print(f"  - Number of phase screens: {num_of_phase_maps}")
-    print(f"  - Distance between phase screens (z_o): {z_o/cm:.2f} cm")
-elif simulateLens:
-    experiment_type = "Lens Experiment (Simulated Fraunhofer Diffraction)"
-    print(f"Experiment Type: {experiment_type}")
-    print(f"  - Number of phase screens: {num_of_phase_maps}")
-    print(f"  - Fourier lens length: {fourier_lens/cm:.2f} cm")
+    with (Path("best_phases")/f"{instance_name}.pkl").open("wb") as file:
+        pkl.dump(phase_angles, file)
+    with (Path("best_phases")/f"{instance_name}_geometry.yaml").open(
+            "w", encoding="utf-8") as file:
+        yaml.safe_dump(
+            optical_train.metadata(stages), file, sort_keys=False
+        )
+    ga_instance.save(filename=f"genetic_instances/{instance_name}")
+
+    print(
+        f"Generation {ga_instance.generations_completed}: best fitness {fitness:.8g}"
+    )
+    if ga_instance.generations_completed % 1000 == 0:
+        plt.figure()
+        plt.plot(ga_instance.best_solutions_fitness)
+        plt.xlabel("Generation")
+        plt.ylabel("Best fitness")
+        plt.tight_layout()
+        plt.savefig(
+            plot_dir/f"fitness_{ga_instance.generations_completed}.jpg"
+        )
+        plt.close()
+
+
+fitness_name = cnfg["fitness_func"]
+if fitness_name == "secret_key":
+    full_fitness = fitness_func_secret_key
+elif fitness_name in {"bread", "full"}:
+    full_fitness = fitness_func_full
 else:
-    experiment_type = "Standard Lens Experiment (Fourier Transform)"
-    print(f"Experiment Type: {experiment_type}")
-    print(f"  - Number of phase screens: {num_of_phase_maps}")
-
-print(f"\nTotal Phase Screens Being Optimized: {num_of_phase_maps}")
-print(f"  - Total genes in solution: {num_genes} ({num_of_phase_maps} × {N}²)")
-
-# Print knot/mode parameters being sorted
-print(f"\nModes Being Sorted:")
-if isKnot:
-    print(f"  - Type: Knotted Beams")
-    print(f"  - Number of knots: {len(knotType)}")
-    for idx, (knot, params) in enumerate(zip(knotType, shapeParams)):
-        print(f"    [{idx+1}] Knot Type: {knot}, Shape Parameters: {params}")
-else:
-    print(f"  - Type: Laguerre-Gaussian (LG) Modes")
-    print(f"  - Number of modes: {len(LG_modes)}")
-    for idx, mode in enumerate(LG_modes):
-        print(f"    [{idx+1}] LG Mode: (l={mode[0]}, p={mode[1]})")
-
-print(f"  - Beam waist (w0): {w0/mm:.2f} mm")
-print(f"  - Number of output channels: {num_of_output_chans}")
-
-# Print rotation settings if applicable
-if randomRotation:
-    print(f"\nRotation: Random (0 to 2π)")
-elif fixedRotation:
-    print(f"\nRotation: Fixed angle = {rot_angle} rad")
-else:
-    print(f"\nRotation: None")
-
-print(f"\nFitness Function: {fitness_function}")
-print(f"\nSorting Performance Alpha: {alpha}")
-print(f"\nDeterminant Exponent Gamma: {gamma}")
-
-print("="*80 + "\n")
-
-# Select fitness function after initial optimization
-if fitness_function == 'secret_key':
-    fitness_func = fitness_func_secretKey
-elif fitness_function == 'bread':
-    fitness_func = fitness_func_secretKey_crosstalk
-
-# We begin by optimizing just the sorting performance for the first start_gen generations
-
-ga_instance_sorting = pygad.GA(num_generations=gen_start,
-                       num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func_sorting,
-                       sol_per_pop=sol_per_pop,
-                       num_genes=num_genes,
-                       init_range_low=init_range_low,
-                       init_range_high=init_range_high,
-                       parent_selection_type=exp_rank_selection,
-                       crossover_type=crossover_type,
-                       mutation_type=mutation_type,
-                       mutation_probability = mutation_probability,
-                       random_mutation_min_val = random_mutation_min_val, 
-                       random_mutation_max_val = random_mutation_max_val, 
-                       on_generation=on_gen, 
-                       keep_elitism = keep_elitism,
-                       on_stop = on_stop)
+    raise ValueError("fitness_func must be 'secret_key', 'bread', or 'full'.")
 
 
-# We then start another GA instance w/ the last population where we start to optimize together the sorting performance and the determinant. 
+def print_configuration():
+    mode_names = knotType if isKnot else LG_modes
+    print("\n"+"="*80)
+    print("KNOT SORTER CONFIGURATION")
+    print("="*80)
+    print(f"Configuration: {config_path}")
+    print(f"Inputs: {mode_names}")
+    print(f"Grid: {N} x {N}, pitch={pixel_pitch/UM:.3f} um, wavelength={wavelength/NM:.1f} nm")
+    print(f"Phase planes: {num_of_phase_maps}")
+    print(f"Propagation model: {optical_train.model}")
+    print(f"Genes: {num_genes} ({phase_gene_count} phase + {optical_train.num_geometry_genes} geometry)")
 
+    initial_stages = optical_train.decode_geometry(
+        optical_train.initial_normalized_geometry
+        if optical_train.num_geometry_genes else None
+    )
+    if optical_train.model == "fresnel_lens_train":
+        computational_size = padded_grid_size(
+            N, optical_train.padding_factor
+        )
+        computational_length = pixel_pitch*computational_size
+        lens_radius_text = (
+            "unbounded" if optical_train.lens_aperture_radius is None
+            else f"{optical_train.lens_aperture_radius/MM:.3f} mm"
+        )
+        print(f"Lens aperture radius: {lens_radius_text}")
+        print(
+            f"Padding: requested {optical_train.padding_factor:.3g}x, "
+            f"effective {computational_size/N:.3g}x, "
+            f"computational grid {computational_size} x {computational_size} "
+            f"({computational_length/MM:.3f} mm side)"
+        )
+        critical = fresnel_sampling_diagnostics(
+            grid_side_length, N, wavelength, propagation_distance=0,
+            padding_factor=optical_train.padding_factor,
+        )["critical_distance"]
+        print(f"TF critical propagation distance: {critical/CM:.3f} cm")
+        for index, stage in enumerate(initial_stages, start=1):
+            before = fresnel_sampling_diagnostics(
+                grid_side_length, N, wavelength,
+                propagation_distance=stage["z_to_lens"],
+                padding_factor=optical_train.padding_factor,
+            )
+            after = fresnel_sampling_diagnostics(
+                grid_side_length, N, wavelength,
+                propagation_distance=stage["z_after_lens"],
+                padding_factor=optical_train.padding_factor,
+            )
+            message = (
+                f"Stage {index}: z1={stage['z_to_lens']/CM:.3f} cm "
+                f"(TF ratio {before['tf_ratio']:.3f}), "
+                f"f={stage['focal_length']/CM:.3f} cm, "
+                f"z2={stage['z_after_lens']/CM:.3f} cm "
+                f"(TF ratio {after['tf_ratio']:.3f})"
+            )
+            if optical_train.lens_aperture_radius is not None:
+                lens = fresnel_sampling_diagnostics(
+                    grid_side_length, N, wavelength,
+                    focal_length=stage["focal_length"],
+                    lens_radius=optical_train.lens_aperture_radius,
+                    padding_factor=optical_train.padding_factor,
+                )
+                message += f" (lens ratio {lens['lens_ratio']:.3f})"
+            print(message)
+    print(f"Fitness: {fitness_name}, alpha={cnfg['alpha']}, gamma={cnfg['gamma']}")
+    print("="*80+"\n")
+
+
+print_configuration()
+
+if args.validate_only:
+    _, validation_maps, validation_stages = decode_solution(initial_population[0])
+    metrics = compute_sorting_performance(
+        validation_maps, list_of_OAMs, validation_stages
+    )
+    print("Validation candidate efficiency matrix:")
+    print(metrics[1])
+    print("Validation candidate assignment matrix:")
+    print(metrics[3])
+    raise SystemExit(0)
+
+
+common_ga_arguments = dict(
+    num_parents_mating=num_parents_mating,
+    sol_per_pop=sol_per_pop,
+    num_genes=num_genes,
+    parent_selection_type=exp_rank_selection,
+    crossover_type=crossover_type,
+    crossover_probability=crossover_probability,
+    mutation_type=mutation_type,
+    mutation_probability=mutation_probability,
+    random_mutation_min_val=mutation_min,
+    random_mutation_max_val=mutation_max,
+    on_mutation=mutate_geometry,
+    on_generation=on_gen,
+    keep_elitism=keep_elitism,
+    random_seed=cnfg["random_seed"],
+)
+
+ga_instance_sorting = pygad.GA(
+    num_generations=gen_start,
+    fitness_func=fitness_func_sorting,
+    initial_population=initial_population,
+    on_stop=on_stop,
+    **common_ga_arguments,
+)
 ga_instance_sorting.run()
 
-ga_instance_crosstalk= pygad.GA(num_generations=num_generations,
-                       num_parents_mating=num_parents_mating,
-                       fitness_func=fitness_func,
-                       sol_per_pop=sol_per_pop,
-                       num_genes=num_genes,
-                       init_range_low=init_range_low,
-                       init_range_high=init_range_high,
-                       initial_population = last_pop, 
-                       parent_selection_type=exp_rank_selection,
-                       crossover_type=crossover_type,
-                       mutation_type=mutation_type,
-                       mutation_probability = mutation_probability,
-                       random_mutation_min_val = random_mutation_min_val, 
-                       random_mutation_max_val = random_mutation_max_val, 
-                       on_generation=on_gen, 
-                       keep_elitism = keep_elitism,
-                       stop_criteria=f"saturate_{gen_saturate}")
-
-
-ga_instance_crosstalk.run()
+ga_instance_full = pygad.GA(
+    num_generations=num_generations,
+    fitness_func=full_fitness,
+    initial_population=last_pop,
+    stop_criteria=f"saturate_{gen_saturate}",
+    **common_ga_arguments,
+)
+ga_instance_full.run()

@@ -1,6 +1,5 @@
-# One-plane Fresnel knot sorter
+# Three-plane Fresnel knot sorter
 
-# Field and detector parameters
 dim: 128
 pixel_pitch_um: 20.0
 wavelength_nm: 780.0
@@ -10,11 +9,10 @@ circle_radius: 1.0            # mm
 channel_sep: 1.5
 w0: 0.10                      # mm
 LG_modes: [[3, 0], [5, 0]]
-gauss_filter_sigma: 500       # retained for archived configurations
+gauss_filter_sigma: 500
 gaussian_filter_sigma_pixels: 1.28
 
-# Physical sorter: one phase plane and one lens stage
-num_phase_planes: 1
+num_phase_planes: 3
 optical_train:
   model: fresnel_lens_train
   optimize_geometry: true
@@ -27,13 +25,17 @@ optical_train:
     - z_to_lens_cm: {initial: 6.0, min: 3.0, max: 6.5}
       focal_length_cm: {initial: 6.0, min: 5.5, max: 10.0}
       z_after_lens_cm: {initial: 6.0, min: 3.0, max: 6.5}
+    - z_to_lens_cm: {initial: 6.0, min: 3.0, max: 6.5}
+      focal_length_cm: {initial: 6.0, min: 5.5, max: 10.0}
+      z_after_lens_cm: {initial: 6.0, min: 3.0, max: 6.5}
+    - z_to_lens_cm: {initial: 6.0, min: 3.0, max: 6.5}
+      focal_length_cm: {initial: 6.0, min: 5.5, max: 10.0}
+      z_after_lens_cm: {initial: 6.0, min: 3.0, max: 6.5}
 
-# Optional input rotation during training
 rot_angle: '0'
 fixedRotation: true
 randomRotation: false
 
-# Genetic algorithm
 num_of_gens: 2.5e5
 gen_start: 1.e4
 parents_mating: 4
@@ -42,20 +44,19 @@ crossover_prob: null
 mutation_type: adaptive
 mutation_percent: 15
 mutation_prob: [0.01, 0.0005]
-random_mutation_min_val: -0.1  # units of pi
-random_mutation_max_val: 0.1   # units of pi
+random_mutation_min_val: -0.1
+random_mutation_max_val: 0.1
 gen_saturate: 20000
 parent_c: 1.0
 parent_k: 0.5
 keep_elitism: 2
 random_seed: null
 
-ga_instance: tref_cinque_fresnel_1plane
+ga_instance: tref_cinque_fresnel_3plane
 fitness_func: full
 alpha: 1.0
 gamma: 1.0
 
-# Input alphabet
 isKnot: true
 knotType: [Trefoil, Cinquefoil]
 shapeParams: [[0.9, 0.9, 1.0], [2.0, 2.0, 1.0]]

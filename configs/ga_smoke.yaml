@@ -1,0 +1,59 @@
+# Fast end-to-end check of the three-plane Fresnel/GA path (not a science run).
+dim: 16
+pixel_pitch_um: 20.0
+wavelength_nm: 780.0
+num_output_chans: 2
+output_chan_width: 0.03
+circle_radius: 0.08
+channel_sep: 1.0
+w0: 0.03
+LG_modes: [[3, 0], [5, 0]]
+gauss_filter_sigma: 500
+gaussian_filter_sigma_pixels: 0.5
+
+num_phase_planes: 3
+optical_train:
+  model: fresnel_lens_train
+  optimize_geometry: true
+  lens_aperture_radius_mm: 0.10
+  padding_factor: 2.0
+  output_coordinate_mode: physical
+  geometry_mutation_probability: 0.5
+  geometry_mutation_scale: 0.1
+  stages:
+    - z_to_lens_cm: {initial: 0.6, min: 0.3, max: 0.8}
+      focal_length_cm: {initial: 0.6, min: 0.55, max: 1.0}
+      z_after_lens_cm: {initial: 0.6, min: 0.3, max: 0.8}
+    - z_to_lens_cm: {initial: 0.6, min: 0.3, max: 0.8}
+      focal_length_cm: {initial: 0.6, min: 0.55, max: 1.0}
+      z_after_lens_cm: {initial: 0.6, min: 0.3, max: 0.8}
+    - z_to_lens_cm: {initial: 0.6, min: 0.3, max: 0.8}
+      focal_length_cm: {initial: 0.6, min: 0.55, max: 1.0}
+      z_after_lens_cm: {initial: 0.6, min: 0.3, max: 0.8}
+
+rot_angle: '0'
+fixedRotation: true
+randomRotation: false
+num_of_gens: 1
+gen_start: 1
+parents_mating: 2
+sol_per_pop: 4
+crossover_prob: null
+mutation_type: adaptive
+mutation_percent: 15
+mutation_prob: [0.05, 0.01]
+random_mutation_min_val: -0.1
+random_mutation_max_val: 0.1
+gen_saturate: 10
+parent_c: 1.0
+parent_k: 1.0
+keep_elitism: 1
+random_seed: 7
+ga_instance: smoke_fresnel_3plane
+fitness_func: full
+alpha: 0.5
+gamma: 1.0
+
+isKnot: true
+knotType: [Trefoil, Cinquefoil]
+shapeParams: [[0.9, 0.9, 1.0], [2.0, 2.0, 1.0]]

@@ -1,3 +1,4 @@
+# Legacy FFT compatibility configuration (no optical_train block).
 # Field Parameters 
 dim: 128
 num_output_chans: 2
