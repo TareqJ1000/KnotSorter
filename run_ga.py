@@ -12,6 +12,7 @@ legacy FFT architecture remains available for existing masks and configurations.
 
 import argparse
 import ast
+import time
 from pathlib import Path
 import pickle as pkl
 
@@ -54,6 +55,26 @@ def _number(value):
     return value
 
 
+def _append_json_line(path, payload):
+    """Append one compact JSON object as a line to ``path`` (NDJSON)."""
+    import json
+    with path.open("a", encoding="utf-8") as file:
+        file.write(json.dumps(payload)+"\n")
+
+
+_START_TIME = None
+
+
+def _generation_cost():
+    """Deterministic per-generation compute proxy (phase evaluations)."""
+    import numpy as _np
+    return int(
+        num_of_phase_maps*len(list_of_OAMs)
+        * (padded_grid_size(N, optical_train.padding_factor)**2)
+        * sol_per_pop
+    )
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--ii", type=int, default=None,
                     help="Load configs/ga<ii>.yaml (gaNone.yaml when omitted).")
@@ -79,6 +100,7 @@ cnfg.setdefault("alpha", 1.0)
 cnfg.setdefault("gamma", 1.0)
 cnfg.setdefault("throughput_metric", "geometric_mean")
 cnfg.setdefault("throughput_exponent", 1.0)
+cnfg.setdefault("secret_key_softplus", False)
 cnfg.setdefault("keep_elitism", 1)
 cnfg.setdefault("random_mutation_min_val", -1.0)
 cnfg.setdefault("random_mutation_max_val", 1.0)
@@ -95,6 +117,8 @@ if throughput_metric not in {"geometric_mean", "minimum", "arithmetic_mean"}:
     )
 if not np.isfinite(throughput_exponent) or throughput_exponent < 0:
     raise ValueError("throughput_exponent must be finite and non-negative.")
+
+secret_key_softplus = bool(cnfg["secret_key_softplus"])
 
 
 # ---------------------------------------------------------------------------
@@ -328,10 +352,15 @@ def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
     )
 
     symbol_error = 1-np.mean(correct)
-    secret_key = max(
-        0.0,
-        np.log2(d)-2*shannon_entropy(symbol_error, d),
-    )
+    key_rate = np.log2(d)-2*shannon_entropy(symbol_error, d)
+    if secret_key_softplus:
+        # Smooth softplus(t)=log(1+exp(t)) gives sub-threshold designs
+        # (key_rate <= 0, i.e. <=50% mean correct) a small but nonzero
+        # gradient instead of the hard max(0,.) plateau at zero. This lets
+        # the GA climb out of the flat sub-threshold regime.
+        secret_key = float(np.log1p(np.exp(np.clip(key_rate, -50.0, 50.0))))
+    else:
+        secret_key = max(0.0, key_rate)
     return (
         balanced_contrast,
         efficiency_matrix,
@@ -353,10 +382,13 @@ def _rotation_angle_for_fitness():
 def fitness_func_sorting(ga_instance, solution, solution_idx):
     _, phase_maps, stages = decode_solution(solution)
     input_modes = create_rotated_modes(_rotation_angle_for_fitness())
-    sorting_performance, *_ = compute_sorting_performance(
+    sorting_performance, _, _, _, throughput, _ = compute_sorting_performance(
         phase_maps, input_modes, stages
     )
-    return float(np.real(sorting_performance))
+
+    throughput_factor = throughput**throughput_exponent
+
+    return float(np.real(sorting_performance*throughput_factor))
 
 
 def fitness_func_secret_key(ga_instance, solution, solution_idx):
@@ -492,6 +524,41 @@ def on_gen(ga_instance):
         )
     ga_instance.save(filename=f"genetic_instances/{instance_name}")
 
+    # Per-generation evolution-loss history (NDJSON). Record the best solution's
+    # decomposed factors alongside the product fitness so curves stay
+    # informative when the key-rate/throughput product gates to zero.
+    global _START_TIME
+    if _START_TIME is None:
+        _START_TIME = time.time()
+    factors = {}
+    try:
+        best_phase_maps, best_stages = decode_solution(solution)[1:]
+        best_input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+        fr = compute_sorting_performance(
+            best_phase_maps, best_input_modes, best_stages
+        )
+        factors = {
+            "contrast": float(np.real(fr[0])),
+            "secret_key": float(np.real(fr[2])),
+            "det_assignment": float(abs(np.linalg.det(fr[3]))),
+            "throughput": float(np.real(fr[4])),
+            "accepted_efficiencies": [float(x) for x in fr[5]],
+        }
+    except Exception:  # noqa: BLE001 - history capture must never kill the run
+        factors = {}
+    event = {
+        "stage": _CURRENT_STAGE,
+        "ga": _CURRENT_STAGE,
+        "generation": ga_instance.generations_completed,
+        "best_fitness": float(fitness),
+        "wall_seconds": time.time()-_START_TIME,
+        "cost_per_gen": _generation_cost(),
+        "factors": factors,
+    }
+    _append_json_line(
+        Path("best_phases")/f"{instance_name}_history.json", event
+    )
+
     print(
         f"Generation {ga_instance.generations_completed}: best fitness {fitness:.8g}"
     )
@@ -602,6 +669,7 @@ if args.validate_only:
     print("Validation accepted detector efficiency per input:")
     print(metrics[5])
     print(f"Validation balanced throughput: {metrics[4]:.8g}")
+    print(f"Validation secret_key: {metrics[2]:.8g} (softplus={secret_key_softplus})")
     raise SystemExit(0)
 
 
@@ -622,6 +690,7 @@ common_ga_arguments = dict(
     random_seed=cnfg["random_seed"],
 )
 
+_CURRENT_STAGE = "sorting"
 ga_instance_sorting = pygad.GA(
     num_generations=gen_start,
     fitness_func=fitness_func_sorting,
@@ -631,6 +700,7 @@ ga_instance_sorting = pygad.GA(
 )
 ga_instance_sorting.run()
 
+_CURRENT_STAGE = "full"
 ga_instance_full = pygad.GA(
     num_generations=num_generations,
     fitness_func=full_fitness,

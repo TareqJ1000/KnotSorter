@@ -18,7 +18,7 @@ optical_train:
   model: fresnel_lens_train
   optimize_geometry: true
   lens_aperture_radius_mm: 1.0
-  padding_factor: 1.0
+  padding_factor: 2.0
   output_coordinate_mode: physical
   geometry_mutation_probability: 0.2
   geometry_mutation_scale: 0.05
@@ -73,6 +73,7 @@ alpha: 1.0
 gamma: 1.0
 throughput_metric: geometric_mean
 throughput_exponent: 1.0
+secret_key_softplus: true
 isKnot: true
 knotType:
 - Trefoil

@@ -1,0 +1,28 @@
+#!/bin/bash -l
+# Restart the four plateaued jobs (ga0-ga3) under the softplus secret-key fix.
+# ga4 (legacy 2-plane) succeeded and is left running untouched.
+# Array index -> config:
+#   0 -> ga0.yaml (1 plane fresnel), 1 -> ga1.yaml (2 plane fresnel),
+#   2 -> ga2.yaml (3 plane fresnel), 3 -> ga3.yaml (1 plane legacy)
+#SBATCH --array=0-3
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=1
+#SBATCH -o ./jobsOut/out_sp.%A_%a
+#SBATCH -e ./jobsErr/err_sp.%A_%a
+#SBATCH -D ./
+#SBATCH -J ga_sp
+#SBATCH --mem=16GB
+#SBATCH --time=60:00:00
+#SBATCH -p bethge
+
+CONFIGS=(configs/ga0.yaml configs/ga1.yaml configs/ga2.yaml configs/ga3.yaml)
+
+if module is-avail python 2>/dev/null && module is-avail scipy-stack 2>/dev/null; then
+    module load python scipy-stack
+else
+    echo "Note: 'python'/'scipy-stack' modules not found; using venv python directly."
+fi
+source venv/bin/activate
+
+srun python run_ga.py --config "${CONFIGS[$SLURM_ARRAY_TASK_ID]}"

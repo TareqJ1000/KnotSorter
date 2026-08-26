@@ -1,22 +1,23 @@
 #!/bin/bash -l
-#SBATCH --array=0-2
+#SBATCH --array=0-1
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=1
 # Standard output and error:
-#SBATCH -o ./jobsOut/out.%A_%a
-#SBATCH -e ./jobsErr/err.%A_%a
+#SBATCH -o ./jobsOut/out_legacy.%A_%a
+#SBATCH -e ./jobsErr/err_legacy.%A_%a
 #SBATCH -D ./
-#SBATCH -J ga_cpu
+#SBATCH -J ga_cpu_legacy
 # Memory / time / partition:
 #SBATCH --mem=16GB
 #SBATCH --time=60:00:00
 #SBATCH -p bethge
 
-# Array index -> config: 0->ga0.yaml (1 plane), 1->ga1.yaml (2 plane), 2->ga2.yaml (3 plane)
+# Legacy FFT experiments, beam waist tripled (w0=0.30). Array index -> config:
+#   0 -> configs/ga3.yaml (1 plane, legacy FFT)
+#   1 -> configs/ga4.yaml (2 plane, legacy FFT)
 
 # The venv below carries its own numpy/scipy, so the cluster module is optional.
-# Load it only if present; never let a missing module abort the job.
 if module is-avail python 2>/dev/null && module is-avail scipy-stack 2>/dev/null; then
     module load python scipy-stack
 else
@@ -24,4 +25,4 @@ else
 fi
 source venv/bin/activate
 
-srun python run_ga.py --ii $SLURM_ARRAY_TASK_ID
+srun python run_ga.py --ii $((3 + $SLURM_ARRAY_TASK_ID))
