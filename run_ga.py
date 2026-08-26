@@ -35,6 +35,7 @@ from optical_functions import (
     propFF,
     propTF,
     propagate_fresnel_lens_train,
+    propagate_legacy_fft,
     setKnotType,
     shannon_entropy,
 )
@@ -232,6 +233,11 @@ def propagate_legacy(field, phase_maps):
                 field_after, grid_side_length, wavelength, z_o
             )*phase_map
         return propTF(field_after, grid_side_length, wavelength, z_o)
+
+    # Preserve the historical one- and two-plane FFT formulas exactly, then
+    # extend their alternating forward/inverse convention to a third plane.
+    if not multiPhaseLens and not simulateLens:
+        return propagate_legacy_fft(field, phase_maps)
 
     if multiPhaseLens:
         field_after = field_mod_1

@@ -106,6 +106,39 @@ def propFF(u1, L1, la, z, isInverse = False):
     
     return u2, L2
 
+
+def propagate_legacy_fft(field, phase_maps):
+    """Propagate through one to three legacy phase planes.
+
+    The historical one-plane sorter applies a centered forward FFT after its
+    phase plate. The two-plane sorter then applies its second phase plate in
+    that Fourier plane and returns with an inverse FFT. Extending the same
+    convention gives the alternating sequence forward, inverse, forward for
+    three phase planes.
+
+    No normalization is introduced here so the one- and two-plane results
+    retain the exact scaling of the original implementation.
+    """
+    field = np.asarray(field)
+    phase_maps = np.asarray(phase_maps)
+    if field.ndim != 2:
+        raise ValueError("field must be a two-dimensional array.")
+    if phase_maps.ndim != 3:
+        raise ValueError("phase_maps must have shape (planes, rows, columns).")
+    if not 1 <= len(phase_maps) <= 3:
+        raise ValueError("The legacy sorter supports one, two, or three planes.")
+    if phase_maps.shape[1:] != field.shape:
+        raise ValueError("Every legacy phase map must match the input field shape.")
+
+    propagated = np.asarray(field, dtype=np.complex128)
+    for plane_index, phase_map in enumerate(phase_maps):
+        modulated = propagated*phase_map
+        if plane_index % 2 == 0:
+            propagated = fftshift(fft2(modulated))
+        else:
+            propagated = ifft2(ifftshift(modulated))
+    return propagated
+
 # LG modes 
 
 '''
@@ -815,6 +848,42 @@ def balanced_detector_throughput(efficiency_matrix, method="geometric_mean"):
             "or 'arithmetic_mean'."
         )
     return float(throughput), accepted
+
+
+def complex_field_fidelity(field_a, field_b):
+    """Return the normalized, global-phase-invariant complex-field overlap."""
+    field_a = np.asarray(field_a, dtype=np.complex128)
+    field_b = np.asarray(field_b, dtype=np.complex128)
+    if field_a.shape != field_b.shape:
+        raise ValueError("The two fields must have the same shape.")
+    if not np.all(np.isfinite(field_a)) or not np.all(np.isfinite(field_b)):
+        raise ValueError("Fields must contain only finite values.")
+
+    power_a = np.vdot(field_a, field_a).real
+    power_b = np.vdot(field_b, field_b).real
+    if power_a <= 0 or power_b <= 0:
+        raise ValueError("Field fidelity is undefined for a zero-power field.")
+    fidelity = abs(np.vdot(field_a, field_b))**2/(power_a*power_b)
+    return float(np.clip(fidelity, 0.0, 1.0))
+
+
+def intensity_fidelity(field_a, field_b):
+    """Return the squared Bhattacharyya overlap of two intensity patterns."""
+    field_a = np.asarray(field_a)
+    field_b = np.asarray(field_b)
+    if field_a.shape != field_b.shape:
+        raise ValueError("The two fields must have the same shape.")
+    if not np.all(np.isfinite(field_a)) or not np.all(np.isfinite(field_b)):
+        raise ValueError("Fields must contain only finite values.")
+
+    intensity_a = np.abs(field_a)**2
+    intensity_b = np.abs(field_b)**2
+    power_a = intensity_a.sum()
+    power_b = intensity_b.sum()
+    if power_a <= 0 or power_b <= 0:
+        raise ValueError("Intensity fidelity is undefined for a zero-power field.")
+    fidelity = np.sum(np.sqrt(intensity_a*intensity_b))**2/(power_a*power_b)
+    return float(np.clip(fidelity, 0.0, 1.0))
 
 # Blazed diffraction grating that we used to simulate creating a knotted beam using an SLM
 

@@ -1,19 +1,22 @@
 import unittest
 
 import numpy as np
-from scipy.fft import fft2, fftshift, ifftshift
+from scipy.fft import fft2, fftshift, ifft2, ifftshift
 
 from optical_functions import (
     balanced_detector_throughput,
     cart2pol,
     center_crop,
     center_pad,
+    complex_field_fidelity,
     fresnel_sampling_diagnostics,
     lens_phase,
+    intensity_fidelity,
     output_chan_circle,
     padded_grid_size,
     propTF,
     propagate_fresnel_lens_train,
+    propagate_legacy_fft,
 )
 from sorter_configuration import parse_optical_train_config
 
@@ -87,6 +90,12 @@ class FresnelPropagationTests(unittest.TestCase):
         reference_intensity /= reference_intensity.sum()
         np.testing.assert_allclose(
             actual_intensity, reference_intensity, rtol=1e-11, atol=1e-13
+        )
+        self.assertAlmostEqual(
+            complex_field_fidelity(propagated, reference), 1.0, places=12
+        )
+        self.assertAlmostEqual(
+            intensity_fidelity(propagated, reference), 1.0, places=12
         )
 
     def test_three_phase_planes_return_three_intermediate_stages(self):
@@ -175,6 +184,41 @@ class FresnelPropagationTests(unittest.TestCase):
         self.assertAlmostEqual(padded["tf_ratio"]/unpadded["tf_ratio"], 0.5)
 
 
+class LegacyFFTPropagationTests(unittest.TestCase):
+    def setUp(self):
+        rng = np.random.default_rng(20260826)
+        self.field = (
+            rng.normal(size=(16, 16))+1j*rng.normal(size=(16, 16))
+        )
+        phase_angles = rng.uniform(-np.pi, np.pi, size=(3, 16, 16))
+        self.phase_maps = np.exp(1j*phase_angles)
+
+    def test_one_plane_matches_historical_forward_fft(self):
+        expected = fftshift(fft2(self.field*self.phase_maps[0]))
+        actual = propagate_legacy_fft(self.field, self.phase_maps[:1])
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_two_planes_match_historical_forward_inverse_pair(self):
+        first_plane = fftshift(fft2(self.field*self.phase_maps[0]))
+        expected = ifft2(ifftshift(first_plane*self.phase_maps[1]))
+        actual = propagate_legacy_fft(self.field, self.phase_maps[:2])
+        np.testing.assert_array_equal(actual, expected)
+
+    def test_three_planes_apply_third_mask_and_forward_fft(self):
+        first_plane = fftshift(fft2(self.field*self.phase_maps[0]))
+        second_plane = ifft2(ifftshift(first_plane*self.phase_maps[1]))
+        expected = fftshift(fft2(second_plane*self.phase_maps[2]))
+        actual = propagate_legacy_fft(self.field, self.phase_maps)
+        np.testing.assert_array_equal(actual, expected)
+
+        changed_maps = self.phase_maps.copy()
+        changed_maps[2] *= np.exp(
+            1j*0.2*np.arange(self.field.shape[1])[None, :]
+        )
+        changed = propagate_legacy_fft(self.field, changed_maps)
+        self.assertLess(complex_field_fidelity(actual, changed), 0.99)
+
+
 class SorterConfigurationTests(unittest.TestCase):
     def test_three_plane_geometry_has_nine_bounded_genes(self):
         stage = {
@@ -238,6 +282,18 @@ class FitnessMetricTests(unittest.TestCase):
 
         np.testing.assert_allclose(accepted, [0.5, 0.125])
         self.assertAlmostEqual(throughput, 0.25)
+
+    def test_fidelity_distinguishes_phase_from_intensity_agreement(self):
+        reference = np.ones((4, 4), dtype=complex)
+        phase_only_change = reference.copy()
+        phase_only_change[:, 2:] *= 1j
+
+        self.assertAlmostEqual(
+            intensity_fidelity(reference, phase_only_change), 1.0
+        )
+        self.assertLess(
+            complex_field_fidelity(reference, phase_only_change), 1.0
+        )
 
 
 if __name__ == "__main__":

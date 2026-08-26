@@ -31,15 +31,21 @@ does not change any intensity or later phase-only modulation. A finite circular
 lens pupil is optional; pupil loss is retained in the detector efficiency.
 
 The direct FFT sorter remains available for archived configurations: any YAML
-without an `optical_train` block is interpreted as `legacy_fft`.
+without an `optical_train` block is interpreted as `legacy_fft`. Its phase
+planes alternate centered forward and inverse transforms, so the one-, two-,
+and three-plane sequences are `FFT`, `FFT -> IFFT`, and
+`FFT -> IFFT -> FFT`, respectively.
 
 ## Configuration
 
-The ready-to-run physical configurations are:
+The ready-to-run configurations are:
 
 - `configs/ga0.yaml`: one phase plane
 - `configs/ga1.yaml`: two phase planes
 - `configs/ga2.yaml`: three phase planes
+- `configs/ga3.yaml`: legacy FFT, one phase plane
+- `configs/ga4.yaml`: legacy FFT, two phase planes
+- `configs/ga5.yaml`: legacy FFT, three phase planes
 - `configs/ga_base.yaml`: documented two-plane template
 - `configs/ga_smoke.yaml`: tiny three-plane integration check, not a science run
 
@@ -120,6 +126,7 @@ starting a long optimization:
 .\venv\Scripts\python.exe run_ga.py --ii 0 --validate-only
 .\venv\Scripts\python.exe run_ga.py --ii 1 --validate-only
 .\venv\Scripts\python.exe run_ga.py --ii 2 --validate-only
+.\venv\Scripts\python.exe run_ga.py --ii 5 --validate-only
 ```
 
 Launch a run by omitting `--validate-only`, or select any YAML explicitly:
@@ -133,7 +140,8 @@ At each generation the best smoothed phase angles are saved to
 `best_phases/<ga_instance>.pkl`. The corresponding decoded physical layout is
 saved to `best_phases/<ga_instance>_geometry.yaml`. `PhaseAnalyzer.ipynb` loads
 both files for the physical train when `experiment_name = None` and `index` is
-set to 0, 1, or 2.
+set to 0, 1, or 2. Legacy configurations use indices 3, 4, and 5 and require
+only their saved phase-mask pickle.
 
 ## Numerical sampling
 
@@ -159,5 +167,6 @@ the computational side length doubles while the pixel pitch stays fixed.
 
 The tests cover Fresnel power conservation, centered padding and cropping, the
 exact thin-lens phase, the front-to-back focal-plane Fourier limit, all three
-phase stages, geometry encoding, detector placement, sampling diagnostics, and
-balanced detector-throughput fitness.
+physical stages, the exact historical one- and two-plane FFT formulas, the
+three-plane legacy FFT extension, geometry encoding, detector placement,
+sampling diagnostics, and balanced detector-throughput fitness.
