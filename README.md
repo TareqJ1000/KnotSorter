@@ -48,6 +48,7 @@ The ready-to-run configurations are:
 - `configs/ga5.yaml`: legacy FFT, three phase planes
 - `configs/ga_legacy_smoke.yaml`: tiny seven-plane legacy integration check
 - `configs/ga_base.yaml`: documented two-plane template
+- `configs/ga_chirality.yaml`: two-plane Fresnel sorter for mirrored trefoils
 - `configs/ga_smoke.yaml`: tiny three-plane integration check, not a science run
 
 The number of entries under `optical_train.stages` must equal
@@ -91,6 +92,17 @@ Geometry genes are stored internally on `[0, 1]`, decoded to their physical
 bounds for every candidate, mutated independently from the phase pixels, and
 clipped to the allowed intervals. The initial layout is always seeded into the
 first candidate.
+
+For a knot alphabet, `mirror` may be a boolean applied to every input or a
+boolean list aligned with `knotType` and `shapeParams`. It defaults to `false`
+for backward compatibility. For example, the two trefoil enantiomers are:
+
+```yaml
+isKnot: true
+knotType: [Trefoil, Trefoil]
+shapeParams: [[0.9, 0.9, 1.0], [0.9, 0.9, 1.0]]
+mirror: [false, true]
+```
 
 ### Numerical-window padding
 

@@ -116,6 +116,12 @@ w0 = float(cnfg["w0"])*MM
 isKnot = bool(cnfg["isKnot"])
 knotType = cnfg["knotType"]
 shapeParams = cnfg["shapeParams"]
+mirror = cnfg.get("mirror", [False]*len(knotType))
+if isinstance(mirror, bool):
+    mirror = [mirror]*len(knotType)
+if not isinstance(mirror, list) or any(
+        not isinstance(value, bool) for value in mirror):
+    raise ValueError("mirror must be a boolean or a list of booleans.")
 
 num_phase_maps_near = int(cnfg.get("num_phase_maps_near", 0))
 num_phase_maps_far = int(cnfg.get("num_phase_maps_far", 0))
@@ -154,11 +160,21 @@ output_chans = output_chan_circle(
 
 list_of_OAMs = []
 if isKnot:
-    if len(knotType) != num_of_output_chans:
-        raise ValueError("The knot alphabet and output-channel count must match.")
-    for knot_name, parameters, channel in zip(knotType, shapeParams, output_chans):
+    if not (
+        len(knotType) == len(shapeParams) == len(mirror)
+        == num_of_output_chans
+    ):
+        raise ValueError(
+            "knotType, shapeParams, mirror, and the output-channel count "
+            "must have matching lengths."
+        )
+    for knot_name, parameters, is_mirrored, channel in zip(
+            knotType, shapeParams, mirror, output_chans):
         list_of_OAMs.append(oamModes(
-            setKnotType(r, phi, w0, knot_name, parameters), channel
+            setKnotType(
+                r, phi, w0, knot_name, parameters, mirror=is_mirrored
+            ),
+            channel,
         ))
 else:
     if len(LG_modes) != num_of_output_chans:
@@ -177,10 +193,14 @@ def create_rotated_modes(rotation_angle):
 
     rotated = []
     if isKnot:
-        for knot_name, parameters, channel in zip(
-                knotType, shapeParams, output_chans):
+        for knot_name, parameters, is_mirrored, channel in zip(
+                knotType, shapeParams, mirror, output_chans):
             rotated.append(oamModes(
-                setKnotType(r_rot, phi_rot, w0, knot_name, parameters), channel
+                setKnotType(
+                    r_rot, phi_rot, w0, knot_name, parameters,
+                    mirror=is_mirrored,
+                ),
+                channel,
             ))
     else:
         for (ell, radial_index), channel in zip(LG_modes, output_chans):
@@ -610,7 +630,11 @@ else:
 
 
 def print_configuration():
-    mode_names = knotType if isKnot else LG_modes
+    mode_names = (
+        [f"{name} (mirror={is_mirrored})"
+         for name, is_mirrored in zip(knotType, mirror)]
+        if isKnot else LG_modes
+    )
     print("\n"+"="*80)
     print("KNOT SORTER CONFIGURATION")
     print("="*80)

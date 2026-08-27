@@ -20,6 +20,7 @@ from optical_functions import (
     propagate_legacy_fft,
     propagate_legacy_fft_padded,
     propagate_legacy_fft_supersampled,
+    setKnotType,
 )
 from sorter_configuration import parse_optical_train_config
 
@@ -293,6 +294,27 @@ class LegacyFFTPropagationTests(unittest.TestCase):
             np.sum(np.abs(output)**2),
             np.sum(np.abs(self.field)**2),
         )
+
+
+class KnotChiralityTests(unittest.TestCase):
+    def test_mirrored_trefoils_have_equal_intensity_and_conjugate_phase(self):
+        size = 64
+        pitch = 20e-6
+        axis = pitch*(np.arange(size)-size//2)
+        xx, yy = np.meshgrid(axis, axis)
+        rr, phi = cart2pol(xx, yy)
+        parameters = [0.9, 0.9, 1.0]
+
+        original = setKnotType(
+            rr, phi, 0.1e-3, "Trefoil", parameters, mirror=False
+        )
+        mirrored = setKnotType(
+            rr, phi, 0.1e-3, "Trefoil", parameters, mirror=True
+        )
+
+        np.testing.assert_allclose(mirrored, np.conj(original))
+        np.testing.assert_allclose(np.abs(mirrored)**2, np.abs(original)**2)
+        self.assertFalse(np.allclose(mirrored, original))
 
 
 class SorterConfigurationTests(unittest.TestCase):
