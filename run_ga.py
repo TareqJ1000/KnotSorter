@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Optimize one-, two-, or three-plane phase sorters for optical knots.
+"""Optimize phase-plane sorters for optical knots.
 
 The preferred architecture explicitly propagates each field through
 
@@ -7,7 +7,8 @@ The preferred architecture explicitly propagates each field through
 
 for every phase plane. The free-space distances and focal lengths may be fixed
 or appended to the genetic chromosome as bounded optimization parameters. A
-legacy FFT architecture remains available for existing masks and configurations.
+legacy FFT architecture remains available for existing masks and supports any
+positive number of alternating Fourier-conjugate phase planes.
 """
 
 import argparse
@@ -119,9 +120,6 @@ num_phase_maps_far = int(cnfg.get("num_phase_maps_far", 0))
 num_of_phase_maps = int(
     cnfg.get("num_phase_planes", num_phase_maps_near+num_phase_maps_far)
 )
-if not 1 <= num_of_phase_maps <= 3:
-    raise ValueError("The sorter supports one, two, or three phase planes.")
-
 optical_train = parse_optical_train_config(cnfg, num_of_phase_maps)
 
 # Legacy propagation settings.

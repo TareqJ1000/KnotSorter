@@ -144,8 +144,8 @@ def _parse_stage_value(stage, key, stage_index, optimize_geometry):
 
 def parse_optical_train_config(config, num_phase_planes):
     """Parse the new optical-train schema with a legacy FFT fallback."""
-    if not 1 <= num_phase_planes <= 3:
-        raise ValueError("num_phase_planes must be 1, 2, or 3.")
+    if num_phase_planes < 1:
+        raise ValueError("num_phase_planes must be at least 1.")
 
     raw_train = config.get("optical_train")
     if raw_train is None:
@@ -179,6 +179,11 @@ def parse_optical_train_config(config, num_phase_planes):
             output_coordinate_mode="legacy",
             geometry_mutation_probability=0.0,
             geometry_mutation_scale=0.0,
+        )
+
+    if num_phase_planes > 3:
+        raise ValueError(
+            "The physical Fresnel lens train supports at most three phase planes."
         )
 
     optimize_geometry = bool(raw_train.get("optimize_geometry", False))

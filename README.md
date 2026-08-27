@@ -31,10 +31,10 @@ does not change any intensity or later phase-only modulation. A finite circular
 lens pupil is optional; pupil loss is retained in the detector efficiency.
 
 The direct FFT sorter remains available for archived configurations: any YAML
-without an `optical_train` block is interpreted as `legacy_fft`. Its phase
-planes alternate centered forward and inverse transforms, so the one-, two-,
-and three-plane sequences are `FFT`, `FFT -> IFFT`, and
-`FFT -> IFFT -> FFT`, respectively.
+without an `optical_train` block is interpreted as `legacy_fft`. It supports
+any positive number of phase planes by alternating centered forward and inverse
+transforms: `FFT`, `FFT -> IFFT`, `FFT -> IFFT -> FFT`, and so on. The physical
+Fresnel/lens model remains limited to one, two, or three planes.
 
 ## Configuration
 
@@ -46,6 +46,7 @@ The ready-to-run configurations are:
 - `configs/ga3.yaml`: legacy FFT, one phase plane
 - `configs/ga4.yaml`: legacy FFT, two phase planes
 - `configs/ga5.yaml`: legacy FFT, three phase planes
+- `configs/ga_legacy_smoke.yaml`: tiny seven-plane legacy integration check
 - `configs/ga_base.yaml`: documented two-plane template
 - `configs/ga_smoke.yaml`: tiny three-plane integration check, not a science run
 
@@ -71,6 +72,20 @@ optical_train:
       focal_length_cm: {initial: 6.0, min: 5.5, max: 10.0}
       z_after_lens_cm: 6.0
 ```
+
+For an arbitrary legacy train, omit `optical_train` (or set its model to
+`legacy_fft`) and choose any positive plane count:
+
+```yaml
+num_phase_planes: 7
+multiPhase: false
+multiPhaseLens: false
+simulateLens: false
+```
+
+Such a configuration contains `num_phase_planes * dim**2` phase genes. These
+planes alternate between the same two Fourier-conjugate numerical coordinate
+systems; they do not represent independently spaced free-space planes.
 
 Geometry genes are stored internally on `[0, 1]`, decoded to their physical
 bounds for every candidate, mutated independently from the phase pixels, and

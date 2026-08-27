@@ -190,7 +190,7 @@ class LegacyFFTPropagationTests(unittest.TestCase):
         self.field = (
             rng.normal(size=(16, 16))+1j*rng.normal(size=(16, 16))
         )
-        phase_angles = rng.uniform(-np.pi, np.pi, size=(3, 16, 16))
+        phase_angles = rng.uniform(-np.pi, np.pi, size=(7, 16, 16))
         self.phase_maps = np.exp(1j*phase_angles)
 
     def test_one_plane_matches_historical_forward_fft(self):
@@ -208,18 +208,42 @@ class LegacyFFTPropagationTests(unittest.TestCase):
         first_plane = fftshift(fft2(self.field*self.phase_maps[0]))
         second_plane = ifft2(ifftshift(first_plane*self.phase_maps[1]))
         expected = fftshift(fft2(second_plane*self.phase_maps[2]))
-        actual = propagate_legacy_fft(self.field, self.phase_maps)
+        actual = propagate_legacy_fft(self.field, self.phase_maps[:3])
         np.testing.assert_array_equal(actual, expected)
 
-        changed_maps = self.phase_maps.copy()
+        changed_maps = self.phase_maps[:3].copy()
         changed_maps[2] *= np.exp(
             1j*0.2*np.arange(self.field.shape[1])[None, :]
         )
         changed = propagate_legacy_fft(self.field, changed_maps)
         self.assertLess(complex_field_fidelity(actual, changed), 0.99)
 
+    def test_arbitrary_train_alternates_forward_and_inverse_transforms(self):
+        expected = self.field
+        for index, phase_map in enumerate(self.phase_maps):
+            modulated = expected*phase_map
+            expected = (
+                fftshift(fft2(modulated))
+                if index % 2 == 0
+                else ifft2(ifftshift(modulated))
+            )
+
+        actual = propagate_legacy_fft(self.field, self.phase_maps)
+        np.testing.assert_array_equal(actual, expected)
+
 
 class SorterConfigurationTests(unittest.TestCase):
+    def test_legacy_train_allows_arbitrary_positive_plane_count(self):
+        train = parse_optical_train_config({}, 7)
+        self.assertEqual(train.model, "legacy_fft")
+        self.assertEqual(train.num_phase_planes, 7)
+
+    def test_physical_train_retains_three_plane_limit(self):
+        with self.assertRaisesRegex(ValueError, "at most three"):
+            parse_optical_train_config({
+                "optical_train": {"model": "fresnel_lens_train"}
+            }, 4)
+
     def test_three_plane_geometry_has_nine_bounded_genes(self):
         stage = {
             "z_to_lens_cm": {"initial": 6.0, "min": 3.0, "max": 6.5},

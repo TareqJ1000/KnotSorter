@@ -1,0 +1,60 @@
+# Fast integration check for an arbitrary-length alternating legacy FFT train.
+dim: 16
+pixel_pitch_um: 20.0
+wavelength_nm: 780.0
+num_output_chans: 2
+output_chan_width: 0.03
+circle_radius: 0.08
+channel_sep: 1.0
+w0: 0.03
+LG_modes:
+- - 3
+  - 0
+- - 5
+  - 0
+gauss_filter_sigma: 500
+gaussian_filter_sigma_pixels: 0.16
+num_phase_planes: 7
+rot_angle: '0'
+fixedRotation: true
+randomRotation: false
+num_of_gens: 1
+gen_start: 1
+parents_mating: 2
+sol_per_pop: 2
+crossover_prob: null
+mutation_type: adaptive
+mutation_percent: 15
+mutation_prob:
+- 0.01
+- 0.0005
+random_mutation_min_val: -0.1
+random_mutation_max_val: 0.1
+gen_saturate: 2
+parent_c: 1.0
+parent_k: 0.5
+keep_elitism: 1
+random_seed: 7
+ga_instance: legacy_7plane_smoke
+fitness_func: full
+alpha: 1.0
+gamma: 1.0
+throughput_metric: geometric_mean
+throughput_exponent: 1.0
+isKnot: true
+knotType:
+- Trefoil
+- Cinquefoil
+shapeParams:
+- - 0.9
+  - 0.9
+  - 1.0
+- - 2.0
+  - 2.0
+  - 1.0
+num_phase_maps_near: 1
+num_phase_maps_far: 6
+simulateLens: false
+multiPhaseLens: false
+multiPhase: false
+fourier_length: 10.0

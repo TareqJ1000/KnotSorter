@@ -108,13 +108,13 @@ def propFF(u1, L1, la, z, isInverse = False):
 
 
 def propagate_legacy_fft(field, phase_maps):
-    """Propagate through one to three legacy phase planes.
+    """Propagate through an arbitrary number of legacy phase planes.
 
     The historical one-plane sorter applies a centered forward FFT after its
     phase plate. The two-plane sorter then applies its second phase plate in
     that Fourier plane and returns with an inverse FFT. Extending the same
-    convention gives the alternating sequence forward, inverse, forward for
-    three phase planes.
+    convention gives an alternating forward/inverse sequence for any positive
+    number of phase planes.
 
     No normalization is introduced here so the one- and two-plane results
     retain the exact scaling of the original implementation.
@@ -125,8 +125,8 @@ def propagate_legacy_fft(field, phase_maps):
         raise ValueError("field must be a two-dimensional array.")
     if phase_maps.ndim != 3:
         raise ValueError("phase_maps must have shape (planes, rows, columns).")
-    if not 1 <= len(phase_maps) <= 3:
-        raise ValueError("The legacy sorter supports one, two, or three planes.")
+    if len(phase_maps) < 1:
+        raise ValueError("The legacy sorter requires at least one phase plane.")
     if phase_maps.shape[1:] != field.shape:
         raise ValueError("Every legacy phase map must match the input field shape.")
 
@@ -439,7 +439,9 @@ def propagate_fresnel_lens_train(field, phase_maps, grid_side_length,
     if phase_maps.ndim != 3:
         raise ValueError("phase_maps must have shape (planes, rows, columns).")
     if not 1 <= len(phase_maps) <= 3:
-        raise ValueError("The sorter supports one, two, or three phase planes.")
+        raise ValueError(
+            "The physical Fresnel train supports one, two, or three phase planes."
+        )
     if len(stages) != len(phase_maps):
         raise ValueError("There must be exactly one optical stage per phase plane.")
     if phase_maps.shape[1:] != np.shape(field):
