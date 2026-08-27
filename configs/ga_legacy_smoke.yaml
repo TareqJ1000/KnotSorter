@@ -20,6 +20,9 @@ fixedRotation: true
 randomRotation: false
 num_of_gens: 1
 gen_start: 1
+refinement_generations: 1
+refinement_padding_factor: 2
+refinement_saturate: null
 parents_mating: 2
 sol_per_pop: 2
 crossover_prob: null

@@ -40,6 +40,9 @@ fixedRotation: true
 randomRotation: false
 num_of_gens: 100000
 gen_start: 10000
+refinement_generations: 0
+refinement_padding_factor: 2
+refinement_saturate: null
 parents_mating: 4
 sol_per_pop: 20
 crossover_prob: null
@@ -61,6 +64,7 @@ alpha: 1.0
 gamma: 1.0
 throughput_metric: geometric_mean
 throughput_exponent: 1.0
+secret_key_softplus: true
 isKnot: true
 knotType:
 - Trefoil

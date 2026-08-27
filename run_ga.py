@@ -29,6 +29,7 @@ from optical_functions import (
     build_fresnel_lens_kernels,
     cart2pol,
     fresnel_sampling_diagnostics,
+    map_legacy_plane_to_padded_grid,
     norm_field,
     oamModes,
     output_chan_circle,
@@ -37,6 +38,7 @@ from optical_functions import (
     propTF,
     propagate_fresnel_lens_train,
     propagate_legacy_fft,
+    propagate_legacy_fft_padded,
     setKnotType,
     shannon_entropy,
 )
@@ -269,7 +271,27 @@ def propagate_legacy(field, phase_maps):
     return ifft2(ifftshift(field_after_2))
 
 
-def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
+_legacy_refinement_channel_cache = {}
+
+
+def _legacy_refinement_channels(padding_factor):
+    """Return physically mapped detector masks on a padded legacy grid."""
+    padding_factor = int(padding_factor)
+    if padding_factor not in _legacy_refinement_channel_cache:
+        output_is_fourier_plane = bool(num_of_phase_maps % 2)
+        _legacy_refinement_channel_cache[padding_factor] = np.asarray([
+            map_legacy_plane_to_padded_grid(
+                channel, padding_factor,
+                fourier_plane=output_is_fourier_plane,
+                fill_value=0.0,
+            )
+            for channel in output_chans
+        ])
+    return _legacy_refinement_channel_cache[padding_factor]
+
+
+def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None,
+                                padding_factor=None):
     """Return conditional sorting metrics and absolute detector throughput."""
     if alpha is None:
         alpha = float(cnfg["alpha"])
@@ -278,13 +300,21 @@ def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
         raise ValueError("Sorting requires at least two input modes.")
 
     efficiency_matrix = np.zeros((d, num_of_output_chans), dtype=float)
+    refinement_mode = padding_factor is not None
+    evaluation_channels = output_chans
     kernels = None
     if optical_train.model == "fresnel_lens_train":
+        effective_padding = (
+            optical_train.padding_factor
+            if padding_factor is None else float(padding_factor)
+        )
         kernels = build_fresnel_lens_kernels(
             (N, N), grid_side_length, wavelength, stages, r,
             lens_radius=optical_train.lens_aperture_radius,
-            padding_factor=optical_train.padding_factor,
+            padding_factor=effective_padding,
         )
+    elif refinement_mode:
+        evaluation_channels = _legacy_refinement_channels(padding_factor)
 
     for input_index, input_mode in enumerate(input_modes):
         field = norm_field(input_mode.oamBeam, h)
@@ -295,7 +325,11 @@ def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
                 field, phase_maps, grid_side_length, wavelength, stages, r,
                 lens_radius=optical_train.lens_aperture_radius,
                 kernels=kernels,
-                padding_factor=optical_train.padding_factor,
+                padding_factor=effective_padding,
+            )
+        elif refinement_mode:
+            final_field = propagate_legacy_fft_padded(
+                field, phase_maps, padding_factor=padding_factor
             )
         else:
             final_field = propagate_legacy(field, phase_maps)
@@ -305,7 +339,7 @@ def compute_sorting_performance(phase_maps, input_modes, stages, alpha=None):
             final_field = norm_field(final_field, h)
 
         final_intensity = np.abs(final_field)**2
-        for output_index, channel in enumerate(output_chans):
+        for output_index, channel in enumerate(evaluation_channels):
             efficiency_matrix[input_index, output_index] = np.real(
                 np.sum(final_intensity*channel)/input_power
             )
@@ -378,11 +412,9 @@ def fitness_func_secret_key(ga_instance, solution, solution_idx):
     return float(np.real(sorting_performance*secret_key))
 
 
-def fitness_func_full(ga_instance, solution, solution_idx):
-    _, phase_maps, stages = decode_solution(solution)
-    input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+def _full_metric_value(performance_metrics):
     sorting_performance, _, secret_key, assignment_matrix, throughput, _ = (
-        compute_sorting_performance(phase_maps, input_modes, stages)
+        performance_metrics
     )
     distinguishability = abs(np.linalg.det(assignment_matrix))**float(cnfg["gamma"])
     throughput_factor = (
@@ -394,12 +426,57 @@ def fitness_func_full(ga_instance, solution, solution_idx):
     ))
 
 
+def fitness_func_full(ga_instance, solution, solution_idx):
+    _, phase_maps, stages = decode_solution(solution)
+    input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+    return _full_metric_value(
+        compute_sorting_performance(phase_maps, input_modes, stages)
+    )
+
+
+def fitness_func_padded_refinement(ga_instance, solution, solution_idx):
+    """Evaluate the full metric on the configured padded propagation grid."""
+    _, phase_maps, stages = decode_solution(solution)
+    input_modes = create_rotated_modes(_rotation_angle_for_fitness())
+    return _full_metric_value(compute_sorting_performance(
+        phase_maps, input_modes, stages,
+        padding_factor=refinement_padding_factor,
+    ))
+
+
 # ---------------------------------------------------------------------------
 # Genetic algorithm
 # ---------------------------------------------------------------------------
 
 num_generations = int(float(_number(cnfg["num_of_gens"])))
 gen_start = int(float(_number(cnfg["gen_start"])))
+refinement_generations = int(float(_number(cnfg.get(
+    "refinement_generations", cnfg.get("refinement_epochs", 0)
+))))
+refinement_padding_factor = float(cnfg.get("refinement_padding_factor", 2.0))
+raw_refinement_saturate = cnfg.get("refinement_saturate")
+refinement_saturate = (
+    None if raw_refinement_saturate is None
+    else int(float(_number(raw_refinement_saturate)))
+)
+if refinement_generations < 0:
+    raise ValueError("refinement_generations cannot be negative.")
+if not np.isfinite(refinement_padding_factor) or refinement_padding_factor < 1:
+    raise ValueError("refinement_padding_factor must be finite and at least 1.")
+if (optical_train.model == "legacy_fft"
+        and int(refinement_padding_factor) != refinement_padding_factor):
+    raise ValueError(
+        "Legacy FFT refinement_padding_factor must be a positive integer."
+    )
+if (refinement_generations > 0
+        and optical_train.model == "fresnel_lens_train"
+        and refinement_padding_factor < optical_train.padding_factor):
+    raise ValueError(
+        "Fresnel refinement_padding_factor cannot be smaller than "
+        "optical_train.padding_factor."
+    )
+if refinement_saturate is not None and refinement_saturate < 1:
+    raise ValueError("refinement_saturate must be null or a positive integer.")
 num_parents_mating = int(cnfg["parents_mating"])
 sol_per_pop = int(cnfg["sol_per_pop"])
 parent_c = float(cnfg["parent_c"])
@@ -487,6 +564,7 @@ def on_gen(ga_instance):
     solution, fitness, _ = ga_instance.best_solution()
     phase_angles, _, stages = decode_solution(solution)
     instance_name = cnfg["ga_instance"]
+    stage_name = getattr(ga_instance, "stage_name", "optimization")
 
     Path("best_phases").mkdir(exist_ok=True)
     Path("genetic_instances").mkdir(exist_ok=True)
@@ -497,13 +575,18 @@ def on_gen(ga_instance):
         pkl.dump(phase_angles, file)
     with (Path("best_phases")/f"{instance_name}_geometry.yaml").open(
             "w", encoding="utf-8") as file:
-        yaml.safe_dump(
-            optical_train.metadata(stages), file, sort_keys=False
-        )
+        metadata = optical_train.metadata(stages)
+        metadata["optimization_stage"] = stage_name
+        if stage_name == "padded refinement":
+            metadata["refinement_padding_factor"] = (
+                refinement_padding_factor
+            )
+        yaml.safe_dump(metadata, file, sort_keys=False)
     ga_instance.save(filename=f"genetic_instances/{instance_name}")
 
     print(
-        f"Generation {ga_instance.generations_completed}: best fitness {fitness:.8g}"
+        f"{stage_name} generation {ga_instance.generations_completed}: "
+        f"best fitness {fitness:.8g}"
     )
     if ga_instance.generations_completed % 1000 == 0:
         plt.figure()
@@ -595,6 +678,25 @@ def print_configuration():
         f"Throughput factor: {throughput_metric}, "
         f"exponent={throughput_exponent:g}"
     )
+    if refinement_generations:
+        if optical_train.model == "legacy_fft":
+            refinement_size = N*int(refinement_padding_factor)
+        else:
+            refinement_size = padded_grid_size(
+                N, refinement_padding_factor
+            )
+        saturation_text = (
+            "disabled" if refinement_saturate is None
+            else str(refinement_saturate)
+        )
+        print(
+            f"Padded refinement: {refinement_generations} generations, "
+            f"factor={refinement_padding_factor:g}, "
+            f"grid={refinement_size} x {refinement_size}, "
+            f"saturation={saturation_text}, metric=full"
+        )
+    else:
+        print("Padded refinement: disabled")
     print("="*80+"\n")
 
 
@@ -612,6 +714,21 @@ if args.validate_only:
     print("Validation accepted detector efficiency per input:")
     print(metrics[5])
     print(f"Validation balanced throughput: {metrics[4]:.8g}")
+    if refinement_generations:
+        refinement_metrics = compute_sorting_performance(
+            validation_maps, list_of_OAMs, validation_stages,
+            padding_factor=refinement_padding_factor,
+        )
+        print("Padded-refinement validation efficiency matrix:")
+        print(refinement_metrics[1])
+        print("Padded-refinement validation assignment matrix:")
+        print(refinement_metrics[3])
+        print("Padded-refinement accepted detector efficiency per input:")
+        print(refinement_metrics[5])
+        print(
+            "Padded-refinement balanced throughput: "
+            f"{refinement_metrics[4]:.8g}"
+        )
     raise SystemExit(0)
 
 
@@ -639,6 +756,7 @@ ga_instance_sorting = pygad.GA(
     on_stop=on_stop,
     **common_ga_arguments,
 )
+ga_instance_sorting.stage_name = "warm-up"
 ga_instance_sorting.run()
 
 ga_instance_full = pygad.GA(
@@ -648,4 +766,27 @@ ga_instance_full = pygad.GA(
     stop_criteria=f"saturate_{gen_saturate}",
     **common_ga_arguments,
 )
+ga_instance_full.stage_name = "full"
 ga_instance_full.run()
+
+ga_instance_refinement = None
+if refinement_generations:
+    refinement_population = ga_instance_full.population.copy()
+    best_full_solution, _, _ = ga_instance_full.best_solution()
+    # Guarantee that the best native-grid candidate survives the transition
+    # even if it is not present in the final population ordering.
+    refinement_population[0] = best_full_solution
+
+    refinement_arguments = dict(common_ga_arguments)
+    if refinement_saturate is not None:
+        refinement_arguments["stop_criteria"] = (
+            f"saturate_{refinement_saturate}"
+        )
+    ga_instance_refinement = pygad.GA(
+        num_generations=refinement_generations,
+        fitness_func=fitness_func_padded_refinement,
+        initial_population=refinement_population,
+        **refinement_arguments,
+    )
+    ga_instance_refinement.stage_name = "padded refinement"
+    ga_instance_refinement.run()

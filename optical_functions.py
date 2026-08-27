@@ -139,6 +139,79 @@ def propagate_legacy_fft(field, phase_maps):
             propagated = ifft2(ifftshift(modulated))
     return propagated
 
+
+def propagate_legacy_fft_supersampled(field, phase_maps, samples_per_pixel=1,
+                                       return_intermediate=False):
+    """Evaluate a legacy FFT train on a finer computational grid.
+
+    ``phase_maps`` contains the native ``N x N`` complex device pixels while
+    ``field`` is sampled on an ``(N*up) x (N*up)`` grid, where ``up`` is
+    ``samples_per_pixel``. Masks in input/image planes (indices 0, 2, ...)
+    replicate each device pixel over ``up x up`` samples. Masks in Fourier
+    planes (indices 1, 3, ...) retain their native ``N x N`` footprint and are
+    embedded in a zero-transmission guard region, representing light that
+    misses the finite device.
+
+    The transform directions and centering reproduce ``propagate_legacy_fft``:
+    forward after even-indexed masks and inverse after odd-indexed masks.
+    Orthonormal FFT scaling preserves discrete power, making any loss at the
+    finite Fourier-plane devices directly measurable against the input power.
+    """
+    field = np.asarray(field)
+    phase_maps = np.asarray(phase_maps)
+    if field.ndim != 2 or field.shape[0] != field.shape[1]:
+        raise ValueError("field must be a square two-dimensional array.")
+    if phase_maps.ndim != 3 or phase_maps.shape[1] != phase_maps.shape[2]:
+        raise ValueError("phase_maps must have shape (planes, N, N).")
+    if len(phase_maps) < 1:
+        raise ValueError("The legacy sorter requires at least one phase plane.")
+    if int(samples_per_pixel) != samples_per_pixel or samples_per_pixel < 1:
+        raise ValueError("samples_per_pixel must be a positive integer.")
+
+    samples_per_pixel = int(samples_per_pixel)
+    device_size = phase_maps.shape[1]
+    computational_size = device_size*samples_per_pixel
+    if field.shape != (computational_size, computational_size):
+        raise ValueError(
+            "field shape must equal (N*samples_per_pixel, "
+            "N*samples_per_pixel)."
+        )
+
+    propagated = np.asarray(field, dtype=np.complex128)
+    records = []
+    for plane_index, phase_map in enumerate(phase_maps):
+        if plane_index % 2 == 0:
+            sampled_mask = np.repeat(
+                np.repeat(phase_map, samples_per_pixel, axis=0),
+                samples_per_pixel, axis=1,
+            )
+        else:
+            sampled_mask = np.zeros(
+                (computational_size, computational_size), dtype=np.complex128
+            )
+            start = (computational_size-device_size)//2
+            sampled_mask[
+                start:start+device_size, start:start+device_size
+            ] = phase_map
+
+        modulated = propagated*sampled_mask
+        if plane_index % 2 == 0:
+            propagated = fftshift(fft2(modulated, norm="ortho"))
+        else:
+            propagated = ifft2(ifftshift(modulated), norm="ortho")
+
+        if return_intermediate:
+            records.append({
+                "plane_index": plane_index,
+                "sampled_mask": sampled_mask,
+                "after_mask": modulated,
+                "stage_output": propagated,
+            })
+
+    if return_intermediate:
+        return propagated, records
+    return propagated
+
 # LG modes 
 
 '''
@@ -297,6 +370,88 @@ def center_crop(array, output_shape):
         starts[0]:starts[0]+output_shape[0],
         starts[1]:starts[1]+output_shape[1],
     ]
+
+
+def map_legacy_plane_to_padded_grid(array, padding_factor,
+                                    fourier_plane=False, fill_value=0):
+    """Map a native legacy-plane array to a zero-padded propagation grid.
+
+    Zero-padding at fixed input-plane pitch makes the Fourier-plane pitch
+    ``padding_factor`` times finer. Consequently, a fixed physical pixel in a
+    Fourier plane spans a ``padding_factor x padding_factor`` sample block. A
+    fixed device in an input/image plane instead retains its native ``N x N``
+    footprint in the centre of the enlarged real-space window.
+    """
+    array = np.asarray(array)
+    if array.ndim != 2 or array.shape[0] != array.shape[1]:
+        raise ValueError("Legacy plane arrays must be square and two-dimensional.")
+    if int(padding_factor) != padding_factor or padding_factor < 1:
+        raise ValueError("Legacy FFT padding_factor must be a positive integer.")
+
+    padding_factor = int(padding_factor)
+    if fourier_plane:
+        return np.repeat(
+            np.repeat(array, padding_factor, axis=0),
+            padding_factor, axis=1,
+        )
+
+    padded_size = array.shape[0]*padding_factor
+    return center_pad(
+        array, (padded_size, padded_size), fill_value=fill_value
+    )
+
+
+def propagate_legacy_fft_padded(field, phase_maps, padding_factor=1,
+                                return_intermediate=False):
+    """Propagate a native legacy field on a fixed-pitch, zero-padded grid.
+
+    The input ``field`` and every phase map remain native ``N x N`` device
+    arrays. Input/image-plane devices are centred in the larger real-space
+    window with zero transmission outside their footprint. Fourier-plane
+    devices are pixel-replicated because zero-padding makes that plane's
+    sampling pitch finer. Forward and inverse transforms alternate exactly as
+    in :func:`propagate_legacy_fft`, using orthonormal scaling so power leaving
+    a finite device remains a measurable loss.
+    """
+    field = np.asarray(field)
+    phase_maps = np.asarray(phase_maps)
+    if field.ndim != 2 or field.shape[0] != field.shape[1]:
+        raise ValueError("field must be a square two-dimensional array.")
+    if phase_maps.ndim != 3 or phase_maps.shape[1:] != field.shape:
+        raise ValueError("phase_maps must have shape (planes, N, N).")
+    if len(phase_maps) < 1:
+        raise ValueError("The legacy sorter requires at least one phase plane.")
+    if int(padding_factor) != padding_factor or padding_factor < 1:
+        raise ValueError("Legacy FFT padding_factor must be a positive integer.")
+
+    padding_factor = int(padding_factor)
+    propagated = map_legacy_plane_to_padded_grid(
+        np.asarray(field, dtype=np.complex128), padding_factor,
+        fourier_plane=False, fill_value=0.0,
+    )
+    records = []
+    for plane_index, phase_map in enumerate(phase_maps):
+        sampled_mask = map_legacy_plane_to_padded_grid(
+            phase_map, padding_factor,
+            fourier_plane=bool(plane_index % 2), fill_value=0.0,
+        )
+        modulated = propagated*sampled_mask
+        if plane_index % 2 == 0:
+            propagated = fftshift(fft2(modulated, norm="ortho"))
+        else:
+            propagated = ifft2(ifftshift(modulated), norm="ortho")
+
+        if return_intermediate:
+            records.append({
+                "plane_index": plane_index,
+                "sampled_mask": sampled_mask,
+                "after_mask": modulated,
+                "stage_output": propagated,
+            })
+
+    if return_intermediate:
+        return propagated, records
+    return propagated
 
 
 def fresnel_sampling_diagnostics(grid_side_length, grid_size, wavelength,

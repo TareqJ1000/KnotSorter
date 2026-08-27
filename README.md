@@ -108,6 +108,34 @@ memory use grows approximately as the square of the padding factor, so the
 production YAML files use `1.0` by default. `configs/ga_smoke.yaml` uses `2.0`
 to exercise the padded path.
 
+### Padded refinement stage
+
+The optimizer can run a third stage after the native-grid warm-up and full
+optimization. It seeds the final full-metric population into a padded-grid GA,
+re-evaluates every candidate with the full fitness metric, and continues for a
+user-selected number of generations:
+
+```yaml
+gen_start: 10000                 # stage 1: sorting/throughput warm-up
+num_of_gens: 100000              # stage 2: native-grid full metric
+refinement_generations: 2000     # stage 3: padded-grid full metric
+refinement_padding_factor: 2     # 128 -> 256 propagation grid
+refinement_saturate: null        # optional early stopping, e.g. 500
+```
+
+Set `refinement_generations: 0` to disable this stage. The device phase arrays
+and chromosome remain at their native `dim x dim` resolution. For a legacy FFT
+train, the padding factor must be a positive integer. Input/image-plane devices
+retain a centred finite footprint, while Fourier-plane device pixels are
+replicated to preserve their physical size on the finer conjugate-plane grid.
+Detector masks are mapped by the same parity rule. For a Fresnel/lens train,
+the refinement factor overrides `optical_train.padding_factor` only during the
+third stage.
+
+The best phase pickle and GA instance are updated throughout refinement. The
+geometry metadata records `optimization_stage: padded refinement` and the
+refinement padding factor for the final refined solution.
+
 ### Fitness and detector throughput
 
 The conditional assignment matrix still controls sorting contrast, key rate,

@@ -43,6 +43,9 @@ randomRotation: false
 # Genetic algorithm
 num_of_gens: 2.5e5
 gen_start: 1.e4
+refinement_generations: 0        # 0 disables the third GA stage
+refinement_padding_factor: 2     # padded propagation grid during refinement
+refinement_saturate: null        # optional early-stop generation count
 parents_mating: 4
 sol_per_pop: 20
 crossover_prob: null

@@ -11,12 +11,15 @@ from optical_functions import (
     complex_field_fidelity,
     fresnel_sampling_diagnostics,
     lens_phase,
+    map_legacy_plane_to_padded_grid,
     intensity_fidelity,
     output_chan_circle,
     padded_grid_size,
     propTF,
     propagate_fresnel_lens_train,
     propagate_legacy_fft,
+    propagate_legacy_fft_padded,
+    propagate_legacy_fft_supersampled,
 )
 from sorter_configuration import parse_optical_train_config
 
@@ -230,6 +233,66 @@ class LegacyFFTPropagationTests(unittest.TestCase):
 
         actual = propagate_legacy_fft(self.field, self.phase_maps)
         np.testing.assert_array_equal(actual, expected)
+
+    def test_unit_sampling_matches_legacy_train(self):
+        reference = propagate_legacy_fft(self.field, self.phase_maps[:3])
+        sampled = propagate_legacy_fft_supersampled(
+            self.field, self.phase_maps[:3], samples_per_pixel=1
+        )
+        self.assertAlmostEqual(
+            complex_field_fidelity(reference, sampled), 1.0, places=12
+        )
+
+    def test_supersampling_retains_fourier_device_aperture_loss(self):
+        rng = np.random.default_rng(91)
+        fine_field = (
+            rng.normal(size=(32, 32))+1j*rng.normal(size=(32, 32))
+        )
+        output, records = propagate_legacy_fft_supersampled(
+            fine_field, self.phase_maps[:2], samples_per_pixel=2,
+            return_intermediate=True,
+        )
+        input_power = np.sum(np.abs(fine_field)**2)
+        output_power = np.sum(np.abs(output)**2)
+
+        self.assertEqual(output.shape, fine_field.shape)
+        self.assertEqual(records[0]["sampled_mask"].shape, (32, 32))
+        self.assertEqual(
+            np.count_nonzero(records[1]["sampled_mask"]), 16*16
+        )
+        self.assertLess(output_power, input_power)
+
+    def test_unit_padding_matches_legacy_train(self):
+        reference = propagate_legacy_fft(self.field, self.phase_maps[:3])
+        padded = propagate_legacy_fft_padded(
+            self.field, self.phase_maps[:3], padding_factor=1
+        )
+        self.assertAlmostEqual(
+            complex_field_fidelity(reference, padded), 1.0, places=12
+        )
+
+    def test_zero_padding_maps_conjugate_plane_devices_physically(self):
+        image_device = map_legacy_plane_to_padded_grid(
+            self.phase_maps[0], 2, fourier_plane=False
+        )
+        fourier_device = map_legacy_plane_to_padded_grid(
+            self.phase_maps[1], 2, fourier_plane=True
+        )
+
+        self.assertEqual(image_device.shape, (32, 32))
+        self.assertEqual(fourier_device.shape, (32, 32))
+        self.assertEqual(np.count_nonzero(image_device), 16*16)
+        self.assertEqual(np.count_nonzero(fourier_device), 32*32)
+
+    def test_padded_three_plane_train_retains_finite_device_loss(self):
+        output = propagate_legacy_fft_padded(
+            self.field, self.phase_maps[:3], padding_factor=2
+        )
+        self.assertEqual(output.shape, (32, 32))
+        self.assertLess(
+            np.sum(np.abs(output)**2),
+            np.sum(np.abs(self.field)**2),
+        )
 
 
 class SorterConfigurationTests(unittest.TestCase):
