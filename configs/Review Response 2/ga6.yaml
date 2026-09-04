@@ -1,0 +1,62 @@
+dim: 128
+pixel_pitch_um: 8.0
+wavelength_nm: 780.0
+num_output_chans: 2
+output_chan_width: 0.10
+circle_radius: 0.60
+channel_sep: 1.5
+w0: 0.10
+LG_modes:
+- - 3
+  - 0
+- - 5
+  - 0
+gauss_filter_sigma: 500
+gaussian_filter_sigma_pixels: 1.28
+num_phase_planes: 2
+rot_angle: '0'
+fixedRotation: true
+randomRotation: false
+num_of_gens: 100000
+gen_start: 10000
+refinement_generations: 0
+refinement_padding_factor: 2.0
+refinement_saturate: null
+parents_mating: 4
+sol_per_pop: 20
+crossover_prob: null
+mutation_type: adaptive
+mutation_percent: 15
+mutation_prob:
+- 0.01
+- 0.0005
+random_mutation_min_val: -0.1
+random_mutation_max_val: 0.1
+gen_saturate: 20000
+parent_c: 1.0
+parent_k: 0.5
+keep_elitism: 2
+random_seed: null
+ga_instance: cinque_chirality_legacy_2plane_p8
+fitness_func: full
+alpha: 1.0
+gamma: 1.0
+throughput_metric: geometric_mean
+throughput_exponent: 1.0
+secret_key_softplus: true
+isKnot: true
+knotType:
+- Cinquefoil
+- Cinquefoil
+shapeParams:
+- [2.0, 2.0, 1.0]
+- [2.0, 2.0, 1.0]
+mirror:
+- false
+- true
+num_phase_maps_near: 1
+num_phase_maps_far: 1
+simulateLens: false
+multiPhaseLens: false
+multiPhase: false
+fourier_length: 10.0

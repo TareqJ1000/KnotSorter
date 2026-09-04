@@ -479,6 +479,31 @@ refinement_saturate = (
     None if raw_refinement_saturate is None
     else int(float(_number(raw_refinement_saturate)))
 )
+
+_START_STAGE_ALIASES = {
+    "warm_up": "warm_up",
+    "warm-up": "warm_up",
+    "warmup": "warm_up",
+    "full": "full",
+    "padded_refinement": "padded_refinement",
+    "padded-refinement": "padded_refinement",
+    "padded refinement": "padded_refinement",
+    "refinement": "padded_refinement",
+}
+raw_start_stage = str(cnfg.get("start_stage", "warm_up")).strip().lower()
+try:
+    start_stage = _START_STAGE_ALIASES[raw_start_stage]
+except KeyError as error:
+    raise ValueError(
+        "start_stage must be 'warm_up', 'full', or 'padded_refinement'."
+    ) from error
+seed_from = cnfg.get("seed_from")
+if isinstance(seed_from, str):
+    seed_from = seed_from.strip() or None
+if start_stage != "warm_up" and seed_from is None:
+    raise ValueError(
+        f"start_stage={start_stage!r} requires a seed_from checkpoint."
+    )
 if refinement_generations < 0:
     raise ValueError("refinement_generations cannot be negative.")
 if not np.isfinite(refinement_padding_factor) or refinement_padding_factor < 1:
@@ -497,6 +522,11 @@ if (refinement_generations > 0
     )
 if refinement_saturate is not None and refinement_saturate < 1:
     raise ValueError("refinement_saturate must be null or a positive integer.")
+if start_stage == "padded_refinement" and refinement_generations < 1:
+    raise ValueError(
+        "start_stage='padded_refinement' requires "
+        "refinement_generations to be positive."
+    )
 num_parents_mating = int(cnfg["parents_mating"])
 sol_per_pop = int(cnfg["sol_per_pop"])
 parent_c = float(cnfg["parent_c"])
@@ -538,6 +568,207 @@ if optical_train.num_geometry_genes:
     initial_population[0, phase_gene_count:] = (
         optical_train.initial_normalized_geometry
     )
+
+
+def _resolve_phase_checkpoint(checkpoint):
+    """Resolve a checkpoint name or path to a best_phases pickle."""
+    requested = Path(str(checkpoint))
+    requested = (
+        requested if requested.suffix.lower() == ".pkl"
+        else requested.with_suffix(".pkl")
+    )
+    if requested.is_absolute() or requested.parent != Path("."):
+        candidates = [requested]
+    else:
+        candidates = [Path("best_phases")/requested, requested]
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    searched = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(
+        f"Could not find seed_from checkpoint {checkpoint!r}; searched {searched}."
+    )
+
+
+def _checkpoint_phase_angles(checkpoint_path):
+    """Load decoded phase angles from a historical or structured checkpoint."""
+    with checkpoint_path.open("rb") as file:
+        checkpoint_data = pkl.load(file)
+
+    if isinstance(checkpoint_data, dict):
+        for key in ("phase_angles", "phases", "phase_maps"):
+            if key in checkpoint_data:
+                checkpoint_data = checkpoint_data[key]
+                break
+        else:
+            raise ValueError(
+                f"Checkpoint {checkpoint_path} is a mapping but contains no "
+                "phase_angles, phases, or phase_maps entry."
+            )
+
+    checkpoint_array = np.asarray(checkpoint_data)
+    if np.iscomplexobj(checkpoint_array):
+        checkpoint_array = np.angle(checkpoint_array)
+    checkpoint_array = np.asarray(checkpoint_array, dtype=float)
+    expected_shape = (num_of_phase_maps, N, N)
+    if checkpoint_array.shape != expected_shape:
+        if checkpoint_array.size == phase_gene_count:
+            checkpoint_array = checkpoint_array.reshape(expected_shape)
+        else:
+            raise ValueError(
+                f"Checkpoint {checkpoint_path} has phase shape "
+                f"{checkpoint_array.shape}; expected {expected_shape}."
+            )
+    if not np.all(np.isfinite(checkpoint_array)):
+        raise ValueError(f"Checkpoint {checkpoint_path} contains non-finite phases.")
+    return checkpoint_array
+
+
+def _recover_phase_genes(phase_angles):
+    """Invert the decode-time Gaussian filter so the seed is reproduced once."""
+    if gaussian_filter_sigma_pixels <= 0:
+        return phase_angles.reshape(-1).copy(), 0.0
+
+    # scipy.ndimage.gaussian_filter is separable.  Building its exact 1-D
+    # reflect-boundary matrix lets us recover a chromosome whose decoded masks
+    # equal the saved (already-smoothed) best_phases masks, avoiding a second
+    # Gaussian blur when the optimization resumes.
+    filter_matrix = sp.ndimage.gaussian_filter1d(
+        np.eye(N), sigma=gaussian_filter_sigma_pixels, axis=0
+    )
+    recovered = np.empty_like(phase_angles)
+    maximum_error = 0.0
+    for plane_index, target in enumerate(phase_angles):
+        raw = sp.linalg.solve(filter_matrix, target, assume_a="gen")
+        raw = sp.linalg.solve(filter_matrix, raw.T, assume_a="gen").T
+        reconstructed = sp.ndimage.gaussian_filter(
+            raw, sigma=gaussian_filter_sigma_pixels
+        )
+        error = float(np.max(np.abs(reconstructed-target)))
+        tolerance = 1e-8*max(1.0, float(np.max(np.abs(target))))
+        if error > tolerance:
+            raise ValueError(
+                f"Could not reconstruct phase plane {plane_index+1} from "
+                f"checkpoint after Gaussian filtering (max error {error:.3g})."
+            )
+        recovered[plane_index] = raw
+        maximum_error = max(maximum_error, error)
+    return recovered.reshape(-1), maximum_error
+
+
+def _checkpoint_geometry_genes(checkpoint_path):
+    """Recover normalized geometry genes from the checkpoint YAML sidecar."""
+    metadata_path = checkpoint_path.with_name(
+        f"{checkpoint_path.stem}_geometry.yaml"
+    )
+    if not metadata_path.is_file():
+        if optical_train.num_geometry_genes:
+            raise FileNotFoundError(
+                f"Optimized geometry requires checkpoint sidecar {metadata_path}."
+            )
+        if optical_train.model == "fresnel_lens_train":
+            print(
+                "WARNING: checkpoint geometry sidecar is missing; using the "
+                "fixed optical_train geometry from the current YAML."
+            )
+        return np.empty(0, dtype=float), None
+
+    with metadata_path.open("r", encoding="utf-8") as stream:
+        metadata = yaml.safe_load(stream) or {}
+    checkpoint_model = metadata.get("model")
+    if checkpoint_model is not None and checkpoint_model != optical_train.model:
+        raise ValueError(
+            f"Checkpoint model {checkpoint_model!r} does not match current "
+            f"model {optical_train.model!r}."
+        )
+    checkpoint_plane_count = metadata.get("num_phase_planes")
+    if (checkpoint_plane_count is not None
+            and int(checkpoint_plane_count) != num_of_phase_maps):
+        raise ValueError(
+            f"Checkpoint has {checkpoint_plane_count} phase planes; current "
+            f"configuration has {num_of_phase_maps}."
+        )
+
+    metadata_stages = metadata.get("stages", [])
+    if optical_train.model == "fresnel_lens_train" and (
+            len(metadata_stages) != num_of_phase_maps):
+        raise ValueError(
+            f"Checkpoint geometry contains {len(metadata_stages)} stages; "
+            f"expected {num_of_phase_maps}."
+        )
+
+    yaml_key = {
+        "z_to_lens": "z_to_lens_cm",
+        "focal_length": "focal_length_cm",
+        "z_after_lens": "z_after_lens_cm",
+    }
+    if not optical_train.num_geometry_genes:
+        if optical_train.model == "fresnel_lens_train":
+            current_stages = optical_train.decode_geometry()
+            for stage_index, (current, saved) in enumerate(zip(
+                    current_stages, metadata_stages)):
+                for name, key in yaml_key.items():
+                    saved_value = float(saved[key])*CM
+                    if not np.isclose(
+                            current[name], saved_value, rtol=1e-9, atol=1e-12):
+                        raise ValueError(
+                            f"Fixed geometry mismatch at stage {stage_index+1} "
+                            f"{key}: YAML={current[name]/CM:g} cm, "
+                            f"checkpoint={saved_value/CM:g} cm."
+                        )
+        return np.empty(0, dtype=float), metadata_path.resolve()
+
+    geometry_genes = []
+    for parameter in optical_train.geometry_parameters:
+        key = yaml_key[parameter.name]
+        try:
+            physical_value = (
+                float(metadata_stages[parameter.stage_index][key])*CM
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"Checkpoint geometry is missing a numeric stage "
+                f"{parameter.stage_index+1} {key}."
+            ) from error
+        tolerance = max(
+            1e-12, (parameter.maximum-parameter.minimum)*1e-9
+        )
+        if not (
+            parameter.minimum-tolerance
+            <= physical_value
+            <= parameter.maximum+tolerance
+        ):
+            raise ValueError(
+                f"Checkpoint stage {parameter.stage_index+1} {key}="
+                f"{physical_value/CM:g} cm lies outside the current bounds "
+                f"[{parameter.minimum/CM:g}, {parameter.maximum/CM:g}] cm."
+            )
+        geometry_genes.append(
+            (physical_value-parameter.minimum)
+            /(parameter.maximum-parameter.minimum)
+        )
+    return np.clip(geometry_genes, 0.0, 1.0), metadata_path.resolve()
+
+
+seed_checkpoint_path = None
+seed_geometry_path = None
+seed_reconstruction_error = None
+if seed_from is not None:
+    seed_checkpoint_path = _resolve_phase_checkpoint(seed_from)
+    seed_phase_angles = _checkpoint_phase_angles(seed_checkpoint_path)
+    seed_phase_genes, seed_reconstruction_error = _recover_phase_genes(
+        seed_phase_angles
+    )
+    seed_geometry_genes, seed_geometry_path = _checkpoint_geometry_genes(
+        seed_checkpoint_path
+    )
+    seed_solution = np.concatenate((seed_phase_genes, seed_geometry_genes))
+    if seed_solution.size != num_genes:
+        raise ValueError(
+            f"Checkpoint produced {seed_solution.size} genes; expected {num_genes}."
+        )
+    initial_population[0] = seed_solution
 
 
 def mutate_geometry(ga_instance, offspring):
@@ -644,11 +875,23 @@ def print_configuration():
     print(f"Phase planes: {num_of_phase_maps}")
     print(f"Propagation model: {optical_train.model}")
     print(f"Genes: {num_genes} ({phase_gene_count} phase + {optical_train.num_geometry_genes} geometry)")
+    print(f"Start stage: {start_stage}")
+    if seed_checkpoint_path is None:
+        print("Seed checkpoint: none")
+    else:
+        print(f"Seed checkpoint: {seed_checkpoint_path}")
+        print(
+            "Seed phase reconstruction error after decode: "
+            f"{seed_reconstruction_error:.3g} rad"
+        )
+        if seed_geometry_path is not None:
+            print(f"Seed geometry: {seed_geometry_path}")
 
-    initial_stages = optical_train.decode_geometry(
-        optical_train.initial_normalized_geometry
+    displayed_geometry = (
+        initial_population[0, phase_gene_count:]
         if optical_train.num_geometry_genes else None
     )
+    initial_stages = optical_train.decode_geometry(displayed_geometry)
     if optical_train.model == "fresnel_lens_train":
         computational_size = padded_grid_size(
             N, optical_train.padding_factor
@@ -773,34 +1016,45 @@ common_ga_arguments = dict(
     random_seed=cnfg["random_seed"],
 )
 
-ga_instance_sorting = pygad.GA(
-    num_generations=gen_start,
-    fitness_func=fitness_func_sorting,
-    initial_population=initial_population,
-    on_stop=on_stop,
-    **common_ga_arguments,
-)
-ga_instance_sorting.stage_name = "warm-up"
-ga_instance_sorting.run()
-
-ga_instance_full = pygad.GA(
-    num_generations=num_generations,
-    fitness_func=full_fitness,
-    initial_population=last_pop,
-    stop_criteria=f"saturate_{gen_saturate}",
-    **common_ga_arguments,
-)
-ga_instance_full.stage_name = "full"
-ga_instance_full.run()
-
+ga_instance_sorting = None
+ga_instance_full = None
 ga_instance_refinement = None
-if refinement_generations:
+
+if start_stage == "warm_up":
+    ga_instance_sorting = pygad.GA(
+        num_generations=gen_start,
+        fitness_func=fitness_func_sorting,
+        initial_population=initial_population,
+        on_stop=on_stop,
+        **common_ga_arguments,
+    )
+    ga_instance_sorting.stage_name = "warm-up"
+    ga_instance_sorting.run()
+    full_initial_population = last_pop
+elif start_stage == "full":
+    full_initial_population = initial_population
+
+if start_stage in {"warm_up", "full"}:
+    ga_instance_full = pygad.GA(
+        num_generations=num_generations,
+        fitness_func=full_fitness,
+        initial_population=full_initial_population,
+        stop_criteria=f"saturate_{gen_saturate}",
+        **common_ga_arguments,
+    )
+    ga_instance_full.stage_name = "full"
+    ga_instance_full.run()
+
+if refinement_generations and start_stage != "padded_refinement":
     refinement_population = ga_instance_full.population.copy()
     best_full_solution, _, _ = ga_instance_full.best_solution()
     # Guarantee that the best native-grid candidate survives the transition
     # even if it is not present in the final population ordering.
     refinement_population[0] = best_full_solution
+elif start_stage == "padded_refinement":
+    refinement_population = initial_population.copy()
 
+if refinement_generations:
     refinement_arguments = dict(common_ga_arguments)
     if refinement_saturate is not None:
         refinement_arguments["stop_criteria"] = (

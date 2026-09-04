@@ -41,6 +41,11 @@ fixedRotation: true
 randomRotation: false
 
 # Genetic algorithm
+# Entry point for a new or resumed run: warm_up, full, or padded_refinement.
+# A resumed full/refinement run requires seed_from. A bare checkpoint name is
+# resolved as best_phases/<name>.pkl; an explicit .pkl path is also accepted.
+start_stage: warm_up
+seed_from: null
 num_of_gens: 2.5e5
 gen_start: 1.e4
 refinement_generations: 0        # 0 disables the third GA stage

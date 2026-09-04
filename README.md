@@ -148,6 +148,52 @@ The best phase pickle and GA instance are updated throughout refinement. The
 geometry metadata records `optimization_stage: padded refinement` and the
 refinement padding factor for the final refined solution.
 
+### Resuming from a best-phase checkpoint
+
+Use `start_stage` with `seed_from` to skip completed stages. A bare
+`seed_from` value resolves to `best_phases/<name>.pkl`; an explicit pickle path
+is also accepted. To continue directly with the native-grid full metric:
+
+```yaml
+start_stage: full
+seed_from: tref_cinque_legacy_2plane
+gen_start: 0                    # ignored because warm-up is skipped
+num_of_gens: 50000              # additional full-stage generations
+refinement_generations: 0       # set >0 to refine after the full stage
+ga_instance: tref_cinque_legacy_2plane_full_continued
+```
+
+To continue directly on the padded refinement metric:
+
+```yaml
+start_stage: padded_refinement
+seed_from: tref_cinque_legacy_2plane
+gen_start: 0                    # ignored
+num_of_gens: 0                  # ignored
+refinement_generations: 10000   # additional padded generations
+refinement_padding_factor: 2
+refinement_saturate: null
+ga_instance: tref_cinque_legacy_2plane_refine_continued
+```
+
+`start_stage` defaults to `warm_up`, preserving the original
+warm-up -> full -> optional refinement sequence. Supplying `seed_from` with
+that default merely seeds the warm-up population.
+
+The checkpoint candidate occupies the first row of a newly initialized GA
+population; the remaining candidates provide fresh diversity. Consequently,
+this continues from the saved best optical solution but does not restore the
+old population, generation counter, or fitness history. Use a new
+`ga_instance` unless overwriting the source checkpoint is intentional.
+
+The best-phase files contain already-smoothed masks. The loader recovers phase
+genes that reproduce those masks after `decode_solution`, avoiding an extra
+Gaussian blur at resume time. For optimized Fresnel geometry, the matching
+`<name>_geometry.yaml` sidecar is required and its values must lie inside the
+new YAML bounds. The phase-plane count, grid dimension, propagation model,
+input alphabet, detector geometry, wavelength, pixel pitch, and beam parameters
+should otherwise match the checkpoint's original run.
+
 ### Fitness and detector throughput
 
 The conditional assignment matrix still controls sorting contrast, key rate,

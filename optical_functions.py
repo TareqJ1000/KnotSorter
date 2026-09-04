@@ -886,7 +886,7 @@ def setKnotType(rr, phi, w0,  knotType, shapeParams, mirror=False):
     
     if (knotType == 'Hopflink'): # Input beam profile (Hopf Link)
         #AK = (1 - 2*(1+a**2 - b**2)*rs**2 + rs**4 - 2*(a**2 + b**2)*np.cos(2*phi)*rs**2 - 1j*4*a*b*np.sin(2*phi)*rs**2)*np.exp(-(rs/(np.sqrt(2)*kk))**2)
-        AK = (1 - 2(1+a**2 - b**2)*rs**2 + rs**4 - np.exp(mirror_fac*2j*phi)*((a+b)**2)*rs**2 -np.exp(-2j*phi*mirror_fac)*((a-b)**2)*rs**2) * np.exp(-(rs/(np.sqrt(2)*kk))**2)
+        AK = (1 - 2*(1+a**2 - b**2)*rs**2 + rs**4 - np.exp(mirror_fac*2j*phi)*((a+b)**2)*rs**2 -np.exp(-2j*phi*mirror_fac)*((a-b)**2)*rs**2) * np.exp(-(rs/(np.sqrt(2)*kk))**2)
 
     if (knotType == 'Cinquefoil'): # Input beam profile (Cinquefoil)
         AK = np.exp(-(rs/(np.sqrt(2)*kk))**2) * (1 + rs**2 - 2*rs**4 - 16*(a**2 - b**2)*rs**5 - 2*rs**6 + rs**8 + rs**10 - (8*((a-b)**2)*(rs**5)*np.exp(-1j*5*(phi)*mirror_fac)) - (8*((a+b)**2)*(rs**5)*np.exp(1j*5*(phi)*mirror_fac)))
